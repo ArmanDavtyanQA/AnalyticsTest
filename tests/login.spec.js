@@ -167,7 +167,7 @@ test.describe('Filters', () => {
     });
 
 
-    test('Check the Card number filter', async ({ page }) => {
+    test('Card number filter', async ({ page }) => {
         await goToTransactions(page);
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
@@ -176,26 +176,26 @@ test.describe('Filters', () => {
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
         
-        const cardNumberFilter = page.locator('.add-filter-list .add-filter-list__item').first();
+        const cardNumberFilter = page.locator('.add-filter-list .add-filter-list__item').nth(0);
         await cardNumberFilter.click();
         
         const cardNumber = page.locator('.filter-popup__container .input [name="cardNumber"]');
         await cardNumber.fill('0348');
-        console.log('Card number filled');
-        
+        const cardNumberInput = page.locator('[name="cardNumber"]');
+        console.log('Submitted card number:', await cardNumberInput.inputValue());        
         const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
         
           await expect(submitButton).toBeEnabled();
           await submitButton.click();
           console.log('Card number filter applied');
-          const tableCreationDateTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(4) p');
-          await expect(tableCreationDateTD).toBeVisible();
-          const cardTxDateText = (await tableCreationDateTD.textContent())?.trim();
-          console.log('First row creation date after card filter:', cardTxDateText);
+          const tableCardNumberTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
+          await expect(tableCardNumberTD).toBeVisible();
+          const cardTxDateText = (await tableCardNumberTD.textContent())?.trim();
+          console.log('First row card number after card filter:', cardTxDateText);
     });
 
 
-    test('Check the Amount filter', async({page}) =>{
+    test('Exact amount filter', async({page}) =>{
         await goToTransactions(page);
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({timeout: 10000});
@@ -204,16 +204,25 @@ test.describe('Filters', () => {
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
 
-        const amountFilter = page.locator('.add-filter-list .add-filter-list__item').second();
-        await amountFilter.click();
+        const exactAmountFilter = page.locator('.add-filter-list .add-filter-list__item').nth(1);
+        await exactAmountFilter.click();
 
         const amount = page.locator('.filter-popup__container .input [name="amountStartRange"]');
+        const amountInput = page.locator('[name="amountStartRange"]');
+
         await amount.fill('100');
-        const submitButton = page.locator('.filter-popup__footer button[type="submit"]');
+        console.log('Submitted amount:', await amountInput.inputValue());
+
+        const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
-        console.log('Amount filter submited');
 
+        const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(6) p');
+        await expect(tableAmountTD).toBeVisible();
+        const amountTxDateText = (await tableAmountTD.textContent())?.trim();
+        const amountValue = parseFloat(amountTxDateText);
+        expect(amountValue).toBeGreaterThanOrEqual(100);
+        console.log('Amount shown in table:', amountTxDateText);
 
     });
 });
