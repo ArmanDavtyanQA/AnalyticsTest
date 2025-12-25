@@ -7,7 +7,7 @@ async function login(page) {
         window.process = window.process || { env: {} };
     });
 
-    await page.goto('https://sme-ecosystem-pos-analytics.test.ameriabank.am/', {
+    await page.goto('https://sme-ecosystem-auth-onboarding.test.ameriabank.am/', {
         waitUntil: 'domcontentloaded',
         timeout: 60000,
     });
@@ -28,8 +28,8 @@ async function login(page) {
     await expect(loginButton).toBeVisible();
     await loginButton.click();
 
-    const dashboardUrl = 'https://sme-ecosystem-pos-analytics.test.ameriabank.am/dashboard/applications-list';
-    const otpUrl = 'https://sme-ecosystem-pos-analytics.test.ameriabank.am/otp-verification-required';
+    const dashboardUrl = 'https://sme-ecosystem-auth-onboarding.test.ameriabank.am/dashboard/applications-list';
+    const otpUrl = 'https://sme-ecosystem-auth-onboarding.test.ameriabank.am/otp-verification-required';
 
     // Wait for either dashboard or OTP verification
     await page.waitForURL(
@@ -141,7 +141,7 @@ test.describe('Filters', () => {
         await expect(filterPopup).toBeVisible();
 
         // Await container alignment block to be visible
-        const switcher = filterPopup.locator('.filter-popup__container .switcher');
+        const switcher = filterPopup.locator('.filter-popup__container .switcher').first();
         await expect(switcher).toBeVisible({ timeout: 10000 });
 
         await switcher.click();
@@ -223,6 +223,85 @@ test.describe('Filters', () => {
         const amountValue = parseFloat(amountTxDateText);
         expect(amountValue).toBeGreaterThanOrEqual(100);
         console.log('Amount shown in table:', amountTxDateText);
+    });
+
+    test('Amount range filter', async({page}) =>{
+        await goToTransactions(page);
+        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+        await expect(addFilterChip).toBeVisible({timeout: 10000});
+        await addFilterChip.click();
+
+        const addFilterPopup = page.locator('.add-filter');
+        await expect(addFilterPopup).toBeVisible();
+
+        const amountRangeFilter = page.locator('.add-filter-list .add-filter-list__item').nth(1);
+        await amountRangeFilter.click();
+
+        const filterPopupVisible = page.locator('.filter-popup:visible');
+        const amountSwitcher = filterPopupVisible.locator('.filter-popup__container .switcher').first();
+        await expect(amountSwitcher).toBeVisible({ timeout: 10000 });
+        await amountSwitcher.click();
+        const amountStart = page.locator('.filter-popup__container .input [name="amountStartRange"]');
+        const amountEnd = page.locator('.filter-popup__container .input [name="amountEndRange"]');
+        const amountStartInput = page.locator('[name="amountStartRange"]');
+        const amountEndInput = page.locator('[name="amountEndRange"]');
+
+        await amountStart.fill('50');
+        await amountEnd.fill('150');
+        console.log('Submitted amount range:', await amountStartInput.inputValue(), '-', await amountEndInput.inputValue());
+
+        const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
+        await expect(submitButton).toBeEnabled();
+        await submitButton.click();
+
+        const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(6) p');
+        await expect(tableAmountTD).toBeVisible();
+        const amountTxDateText = (await tableAmountTD.textContent())?.trim();
+        const amountValue = parseFloat(amountTxDateText);
+        expect(amountValue).toBeGreaterThanOrEqual(50);
+        expect(amountValue).toBeLessThanOrEqual(150);
+        console.log('Amount shown in table:', amountTxDateText);
 
     });
-});
+
+        test('Authorization Code UniqueID', async({page}) =>{
+            await goToTransactions(page);
+            const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+            await expect(addFilterChip).toBeVisible({timeout: 10000});
+            await addFilterChip.click();
+    
+            const addFilterPopup = page.locator('.add-filter');
+            await expect(addFilterPopup).toBeVisible();
+    
+            const uniqueIDFilter = page.locator('.add-filter-list .add-filter-list__item').nth(2);
+            await uniqueIDFilter.click();
+    
+            const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
+            await uniqueIdDropdown.click();
+            const firstOption = page.locator('.select__options .select__option').first();
+            await firstOption.click();
+            const uniqueIDInput = page.locator('input[name="uniqueIdValue"]'); 
+            await uniqueIDInput.fill('538885');
+            const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
+            await expect(submitButton).toBeEnabled();
+            await submitButton.click();
+            
+            
+            console.log('Submitted UniqueID value:', await uniqueIDInput.inputValue());
+
+            const tableUniqueIDTD = page.locator('.transactions-wrapper__listing table tbody');
+            await expect(tableUniqueIDTD).toBeVisible();
+            const uniqueTransaction = page.locator('.advanced-table tr td:nth-child(1) p').first();
+            await expect(uniqueTransaction).toBeVisible();
+            await uniqueTransaction.click();
+            console.log('Details opened');
+            const uniqueIDDetail = page
+            .locator('.side-sheet__container .side-sheet__content .list-card:nth-child(5)')
+            .locator('.list-card__item.transaction-list-item span')
+            .first();
+            const uniqueIDText = (await uniqueIDDetail.textContent())?.trim();
+            console.log('UniqueID shown in details:', uniqueIDText);
+            expect(uniqueIDText).toBe('538885');
+            
+        });
+    });
