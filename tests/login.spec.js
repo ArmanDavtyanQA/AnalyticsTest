@@ -287,21 +287,191 @@ test.describe('Filters', () => {
             await submitButton.click();
             
             
-            console.log('Submitted UniqueID value:', await uniqueIDInput.inputValue());
+            console.log('Submitted Authorization Code value:', await uniqueIDInput.inputValue());
 
             const tableUniqueIDTD = page.locator('.transactions-wrapper__listing table tbody');
-            await expect(tableUniqueIDTD).toBeVisible();
+            await expect(tableUniqueIDTD).toBeVisible({timeout: 15000});
             const uniqueTransaction = page.locator('.advanced-table tr td:nth-child(1) p').first();
-            await expect(uniqueTransaction).toBeVisible();
+            await expect(uniqueTransaction).toBeVisible({timeout: 15000});
             await uniqueTransaction.click();
             console.log('Details opened');
+
+            // Wait for side sheet to become visible before accessing its content
+            const sideSheet = page.locator('.side-sheet__container');
+            await expect(sideSheet).toBeVisible({timeout: 15000});
+
             const uniqueIDDetail = page
             .locator('.side-sheet__container .side-sheet__content .list-card:nth-child(5)')
             .locator('.list-card__item.transaction-list-item span')
             .first();
-            const uniqueIDText = (await uniqueIDDetail.textContent())?.trim();
-            console.log('UniqueID shown in details:', uniqueIDText);
+            const uniqueIDText = (await uniqueIDDetail.textContent({timeout: 15000}))?.trim();
+            console.log('Authorization Code shown in details:', uniqueIDText);
             expect(uniqueIDText).toBe('538885');
             
-        });
     });
+        test('RRN 1 UniqueID', async({page}) =>{
+            await goToTransactions(page);
+            const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+            await expect(addFilterChip).toBeVisible({timeout: 10000});
+            await addFilterChip.click();
+    
+            const addFilterPopup = page.locator('.add-filter');
+            await expect(addFilterPopup).toBeVisible();
+    
+            const uniqueIDFilter = page.locator('.add-filter-list .add-filter-list__item').nth(2);
+            await uniqueIDFilter.click();
+    
+            const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
+            await uniqueIdDropdown.click();
+            const secondOption = page.locator('.select__options .select__option').nth(1);
+            await secondOption.click();
+            const uniqueIDInput = page.locator('input[name="uniqueIdValue"]'); 
+            await uniqueIDInput.fill('008035538885');
+            const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
+            await expect(submitButton).toBeEnabled();
+            await submitButton.click();
+            
+            console.log('Submitted UniqueID value:', await uniqueIDInput.inputValue());
+
+            const tableUniqueIDTD = page.locator('.transactions-wrapper__listing table tbody');
+            await expect(tableUniqueIDTD).toBeVisible({timeout: 15000});
+            const uniqueTransaction = page.locator('.advanced-table tr td:nth-child(1) p').first();
+            await expect(uniqueTransaction).toBeVisible({timeout: 15000});
+            await uniqueTransaction.click();
+            console.log('Details opened');
+
+            // Wait for side sheet to become visible before accessing its content
+            const sideSheet = page.locator('.side-sheet__container');
+            await expect(sideSheet).toBeVisible({timeout: 15000});
+
+            const itemIndex = 1; // ← change this to 0 / 1 / 2 / 3
+
+            const uniqueIDDetail = page
+              .locator('.side-sheet__container .side-sheet__content .list-card:nth-child(5)')
+              .locator('.list-card__content .list-card__item.transaction-list-item')
+              .nth(itemIndex)
+              .locator('p')
+              .nth(1)        // second <p> (value container)
+              .locator('span');
+
+            const uniqueIDText = (await uniqueIDDetail.textContent({timeout: 15000}))?.trim();
+            console.log('RRN 1 shown in details:', uniqueIDText);
+
+            expect(uniqueIDText).toBe('008035538885');
+        });
+
+        test('RRN 2 UniqueID', async({page}) =>{
+            await goToTransactions(page);
+            const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+            await expect(addFilterChip).toBeVisible({timeout: 10000});
+            await addFilterChip.click();
+    
+            const addFilterPopup = page.locator('.add-filter');
+            await expect(addFilterPopup).toBeVisible();
+    
+            const uniqueIDFilter = page.locator('.add-filter-list .add-filter-list__item').nth(2);
+            await uniqueIDFilter.click();
+    
+            const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
+            await uniqueIdDropdown.click();
+            const thirdOption = page.locator('.select__options .select__option').nth(2);
+            await thirdOption.click();
+            const uniqueIDInput = page.locator('input[name="uniqueIdValue"]'); 
+            await uniqueIDInput.fill('127532730688');
+            const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
+            await expect(submitButton).toBeEnabled();
+            await submitButton.click();
+            
+            console.log('Submitted UniqueID value:', await uniqueIDInput.inputValue());
+
+            const tableUniqueIDTD = page.locator('.transactions-wrapper__listing table tbody');
+            await expect(tableUniqueIDTD).toBeVisible({timeout: 15000});
+            const uniqueTransaction = page.locator('.advanced-table tr td:nth-child(1) p').first();
+            await expect(uniqueTransaction).toBeVisible({timeout: 15000});
+            await uniqueTransaction.click();
+            console.log('Details opened');
+            // Wait for side sheet to become visible before accessing its content
+            const sideSheet = page.locator('.side-sheet__container');
+            await expect(sideSheet).toBeVisible({timeout: 15000});
+
+            const itemIndex = 2; // ← change this to 0 / 1 / 2 / 3
+
+            const uniqueIDDetail = page
+              .locator('.side-sheet__container .side-sheet__content .list-card:nth-child(5)')
+              .locator('.list-card__content .list-card__item.transaction-list-item')
+              .nth(itemIndex)
+              .locator('p')
+              .nth(1)        // second <p> (value container)
+              .locator('span');
+
+            const uniqueIDText = (await uniqueIDDetail.textContent({timeout: 15000}))?.trim();
+            console.log('RRN 2 shown in details:', uniqueIDText);
+
+            expect(uniqueIDText).toBe('127532730688');
+        });
+
+        test('RRN 3 UniqueID', async({page}) =>{
+            await goToTransactions(page);
+            const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+            await expect(addFilterChip).toBeVisible({timeout: 10000});
+            await addFilterChip.click();
+    
+            const addFilterPopup = page.locator('.add-filter');
+            await expect(addFilterPopup).toBeVisible();
+    
+            const uniqueIDFilter = page.locator('.add-filter-list .add-filter-list__item').nth(2);
+            await uniqueIDFilter.click();
+    
+            const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
+            await uniqueIdDropdown.click();
+            const fourthOption = page.locator('.select__options .select__option').nth(3);
+            await fourthOption.click();
+            const uniqueIDInput = page.locator('input[name="uniqueIdValue"]'); 
+            await uniqueIDInput.fill('8035538885');
+            const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
+            await expect(submitButton).toBeEnabled();
+            await submitButton.click();
+            
+            console.log('Submitted RRN 3 value:', await uniqueIDInput.inputValue());
+
+            const tableUniqueIDTD = page.locator('.transactions-wrapper__listing table tbody');
+            await expect(tableUniqueIDTD).toBeVisible({timeout: 15000});
+            const uniqueTransaction = page.locator('.advanced-table tr td:nth-child(1) p').first();
+            await expect(uniqueTransaction).toBeVisible({timeout: 15000});
+            await uniqueTransaction.click();
+            console.log('Details opened');
+            // Wait for side sheet to become visible before accessing its content
+            const sideSheet = page.locator('.side-sheet__container');
+            await expect(sideSheet).toBeVisible({timeout: 15000});
+
+            const itemIndex = 3; // ← change this to 0 / 1 / 2 / 3
+
+            const uniqueIDDetail = page
+              .locator('.side-sheet__container .side-sheet__content .list-card:nth-child(5)')
+              .locator('.list-card__content .list-card__item.transaction-list-item')
+              .nth(itemIndex)
+              .locator('p')
+              .nth(1)        // second <p> (value container)
+              .locator('span');
+
+            const uniqueIDText = (await uniqueIDDetail.textContent({timeout: 15000}))?.trim();
+            console.log('RRN 3 shown in details:', uniqueIDText);
+
+            expect(uniqueIDText).toBe('8035538885');
+        });
+
+        test ('Terminal ID filter', async({page}) =>{
+            await goToTransactions(page);
+            const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+            await expect(addFilterChip).toBeVisible({timeout: 10000});
+            await addFilterChip.click();
+    
+            const addFilterPopup = page.locator('.add-filter');
+            await expect(addFilterPopup).toBeVisible();
+                
+            const terminalIDFilter = page.locator('.add-filter-list .add-filter-list__item').nth(3);
+            await terminalIDFilter.click();
+
+
+    });
+});
