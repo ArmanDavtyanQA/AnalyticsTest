@@ -1,4 +1,6 @@
 const { test, expect } = require('@playwright/test');
+import { creationDateFilterRange, terminalIdFinder } from '../helpers';
+import testData from '../testData.json' assert { type: 'json' };   
 
 // Helper: logs into the test environment and ensures we land on the dashboard
 async function login(page) {
@@ -108,13 +110,14 @@ test.describe('Filters', () => {
         const transactionStartDateInput = page.locator('input[name="transactionStartDate"]');
         const transactionEndDateInput = page.locator('input[name="trasnactionEndDate"]');
         await expect(transactionStartDateInput).toBeVisible();
-        await transactionStartDateInput.fill('01-12-2023');
+        const dateConfig = testData.creationDateFilters.standardRange;
+        await transactionStartDateInput.fill(dateConfig.startDate);
         await expect(transactionEndDateInput).toBeVisible();
-        await transactionEndDateInput.fill('01-02-2024');
+        await transactionEndDateInput.fill(dateConfig.endDate);
         await transactionStartDateInput.press('Enter');
 
         // Validate first row creation date falls within selected range
-        const tableCreationDateTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(4) p');
+        const tableCreationDateTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(3) p');
         await expect(tableCreationDateTD).toBeVisible();
         const txDateText = (await tableCreationDateTD.textContent()).trim();
         const startDateText = await transactionStartDateInput.inputValue();
@@ -149,10 +152,11 @@ test.describe('Filters', () => {
         await expect(transactionEndDateInput).toBeHidden();
         const transactionStartDateInput = page.locator('input[name="transactionStartDate"]');
         await expect(transactionStartDateInput).toBeVisible();
-        await transactionStartDateInput.fill('01-02-2024');
+        const dateConfig = testData.creationDateFilters.exactDate;
+        await transactionStartDateInput.fill(dateConfig.startDate);
         await transactionStartDateInput.press('Enter');
 
-        const tableCreationDateTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(4) p');
+        const tableCreationDateTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(3) p');
         await expect(tableCreationDateTD).toBeVisible();
         const txDateText = (await tableCreationDateTD.textContent()).trim();
         const startDateText = await transactionStartDateInput.inputValue();
@@ -166,16 +170,17 @@ test.describe('Filters', () => {
         await console.log('Exact date case passed');
     });
 
-
     test('Card number filter', async ({ page }) => {
         await goToTransactions(page);
+        await creationDateFilterRange(page, 'standardRange');
+
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
+        await creationDateFilterRange(page, 'standardRange');
         await addFilterChip.click();
 
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
-        
         const cardNumberFilter = page.locator('.add-filter-list .add-filter-list__item').nth(0);
         await cardNumberFilter.click();
         
@@ -188,15 +193,17 @@ test.describe('Filters', () => {
           await expect(submitButton).toBeEnabled();
           await submitButton.click();
           console.log('Card number filter applied');
-          const tableCardNumberTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
+
+        
+          const tableCardNumberTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(4) p');
           await expect(tableCardNumberTD).toBeVisible();
           const cardTxDateText = (await tableCardNumberTD.textContent())?.trim();
           console.log('First row card number after card filter:', cardTxDateText);
     });
 
-
     test('Exact amount filter', async({page}) =>{
         await goToTransactions(page);
+        await creationDateFilterRange(page, 'standardRange');
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({timeout: 10000});
         await addFilterChip.click();
@@ -217,7 +224,7 @@ test.describe('Filters', () => {
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
 
-        const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(6) p');
+        const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
         await expect(tableAmountTD).toBeVisible();
         const amountTxDateText = (await tableAmountTD.textContent())?.trim();
         const amountValue = parseFloat(amountTxDateText);
@@ -227,6 +234,7 @@ test.describe('Filters', () => {
 
     test('Amount range filter', async({page}) =>{
         await goToTransactions(page);
+        await creationDateFilterRange(page, 'standardRange');
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({timeout: 10000});
         await addFilterChip.click();
@@ -254,7 +262,7 @@ test.describe('Filters', () => {
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
 
-        const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(6) p');
+        const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
         await expect(tableAmountTD).toBeVisible();
         const amountTxDateText = (await tableAmountTD.textContent())?.trim();
         const amountValue = parseFloat(amountTxDateText);
@@ -264,8 +272,9 @@ test.describe('Filters', () => {
 
     });
 
-        test('Authorization Code UniqueID', async({page}) =>{
+    test('Authorization Code UniqueID', async({page}) =>{
             await goToTransactions(page);
+            await creationDateFilterRange(page, 'standardRange');
             const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
             await expect(addFilterChip).toBeVisible({timeout: 10000});
             await addFilterChip.click();
@@ -309,8 +318,10 @@ test.describe('Filters', () => {
             expect(uniqueIDText).toBe('538885');
             
     });
-        test('RRN 1 UniqueID', async({page}) =>{
+
+    test('RRN 1 UniqueID', async({page}) =>{
             await goToTransactions(page);
+            await creationDateFilterRange(page, 'standardRange');
             const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
             await expect(addFilterChip).toBeVisible({timeout: 10000});
             await addFilterChip.click();
@@ -358,10 +369,11 @@ test.describe('Filters', () => {
             console.log('RRN 1 shown in details:', uniqueIDText);
 
             expect(uniqueIDText).toBe('008035538885');
-        });
+    });
 
-        test('RRN 2 UniqueID', async({page}) =>{
+    test('RRN 2 UniqueID', async({page}) =>{
             await goToTransactions(page);
+            await creationDateFilterRange(page, 'standardRange');
             const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
             await expect(addFilterChip).toBeVisible({timeout: 10000});
             await addFilterChip.click();
@@ -408,10 +420,11 @@ test.describe('Filters', () => {
             console.log('RRN 2 shown in details:', uniqueIDText);
 
             expect(uniqueIDText).toBe('127532730688');
-        });
+    });
 
-        test('RRN 3 UniqueID', async({page}) =>{
+    test('RRN 3 UniqueID', async({page}) =>{
             await goToTransactions(page);
+            await creationDateFilterRange(page, 'standardRange');
             const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
             await expect(addFilterChip).toBeVisible({timeout: 10000});
             await addFilterChip.click();
@@ -458,10 +471,11 @@ test.describe('Filters', () => {
             console.log('RRN 3 shown in details:', uniqueIDText);
 
             expect(uniqueIDText).toBe('8035538885');
-        });
+    });
 
-        test ('Terminal ID filter', async({page}) =>{
+    test ('Terminal ID filter', async({page}) =>{
             await goToTransactions(page);
+            await creationDateFilterRange(page, 'standardRange');
             const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
             await expect(addFilterChip).toBeVisible({timeout: 10000});
             await addFilterChip.click();
@@ -473,5 +487,9 @@ test.describe('Filters', () => {
             await terminalIDFilter.click();
 
 
+            for(let i = 0; i < 5; i++){
+                let terminalItem = page.locator(await terminalIdFinder(i + 1)); 
+                await terminalItem.click();
+            }
     });
 });
