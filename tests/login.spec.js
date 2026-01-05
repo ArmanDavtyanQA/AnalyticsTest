@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
-import { creationDateFilterRange, terminalIdFinder } from '../helpers';
-import testData from '../testData.json' assert { type: 'json' };   
+import { creationDateFilterRange, terminalIdFinder, openDetailsSideSheet, getSideSheetValue } from '../helpers';
+import testData from '../testData.json' assert { type: 'json' };  
+
 
 // Helper: logs into the test environment and ensures we land on the dashboard
 async function login(page) {
@@ -9,7 +10,7 @@ async function login(page) {
         window.process = window.process || { env: {} };
     });
 
-    await page.goto('https://sme-ecosystem-auth-onboarding.test.ameriabank.am/', {
+    await page.goto('https://sme-ecosystem-pos-analytics.test.ameriabank.am/', {
         waitUntil: 'domcontentloaded',
         timeout: 60000,
     });
@@ -30,8 +31,8 @@ async function login(page) {
     await expect(loginButton).toBeVisible();
     await loginButton.click();
 
-    const dashboardUrl = 'https://sme-ecosystem-auth-onboarding.test.ameriabank.am/dashboard/applications-list';
-    const otpUrl = 'https://sme-ecosystem-auth-onboarding.test.ameriabank.am/otp-verification-required';
+    const dashboardUrl = 'https://sme-ecosystem-pos-analytics.test.ameriabank.am/dashboard/applications-list';
+    const otpUrl = 'https://sme-ecosystem-pos-analytics.test.ameriabank.am/otp-verification-required';
 
     // Wait for either dashboard or OTP verification
     await page.waitForURL(
@@ -298,24 +299,13 @@ test.describe('Filters', () => {
             
             console.log('Submitted Authorization Code value:', await uniqueIDInput.inputValue());
 
-            const tableUniqueIDTD = page.locator('.transactions-wrapper__listing table tbody');
-            await expect(tableUniqueIDTD).toBeVisible({timeout: 15000});
-            const uniqueTransaction = page.locator('.advanced-table tr td:nth-child(1) p').first();
-            await expect(uniqueTransaction).toBeVisible({timeout: 15000});
-            await uniqueTransaction.click();
-            console.log('Details opened');
-
-            // Wait for side sheet to become visible before accessing its content
-            const sideSheet = page.locator('.side-sheet__container');
-            await expect(sideSheet).toBeVisible({timeout: 15000});
-
-            const uniqueIDDetail = page
-            .locator('.side-sheet__container .side-sheet__content .list-card:nth-child(5)')
-            .locator('.list-card__item.transaction-list-item span')
-            .first();
-            const uniqueIDText = (await uniqueIDDetail.textContent({timeout: 15000}))?.trim();
-            console.log('Authorization Code shown in details:', uniqueIDText);
-            expect(uniqueIDText).toBe('538885');
+            const sideSheet = await openDetailsSideSheet(page);
+            const DETAILS_SECTION = testData.sideSheet.sections.DETAILS_CARD;
+            const AUTH_CODE_ITEM = testData.sideSheet.items.AUTHORIZATION_CODE;
+            
+            const authCodeValue = await getSideSheetValue(sideSheet, DETAILS_SECTION, AUTH_CODE_ITEM);
+            console.log('Authorization Code shown in details:', authCodeValue);
+            expect(authCodeValue).toBe('538885');
             
     });
 
@@ -340,35 +330,17 @@ test.describe('Filters', () => {
             await uniqueIDInput.fill('008035538885');
             const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
             await expect(submitButton).toBeEnabled();
-            await submitButton.click();
-            
+            await submitButton.click();            
             console.log('Submitted UniqueID value:', await uniqueIDInput.inputValue());
 
-            const tableUniqueIDTD = page.locator('.transactions-wrapper__listing table tbody');
-            await expect(tableUniqueIDTD).toBeVisible({timeout: 15000});
-            const uniqueTransaction = page.locator('.advanced-table tr td:nth-child(1) p').first();
-            await expect(uniqueTransaction).toBeVisible({timeout: 15000});
-            await uniqueTransaction.click();
-            console.log('Details opened');
-
-            // Wait for side sheet to become visible before accessing its content
-            const sideSheet = page.locator('.side-sheet__container');
-            await expect(sideSheet).toBeVisible({timeout: 15000});
-
-            const itemIndex = 1; // ← change this to 0 / 1 / 2 / 3
-
-            const uniqueIDDetail = page
-              .locator('.side-sheet__container .side-sheet__content .list-card:nth-child(5)')
-              .locator('.list-card__content .list-card__item.transaction-list-item')
-              .nth(itemIndex)
-              .locator('p')
-              .nth(1)        // second <p> (value container)
-              .locator('span');
-
-            const uniqueIDText = (await uniqueIDDetail.textContent({timeout: 15000}))?.trim();
-            console.log('RRN 1 shown in details:', uniqueIDText);
-
-            expect(uniqueIDText).toBe('008035538885');
+            const sideSheet = await openDetailsSideSheet(page, 0);
+            const DETAILS_SECTION = testData.sideSheet.sections.DETAILS_CARD;
+            const RRN_1_ITEM = testData.sideSheet.items.RRN_1;
+            
+            const rrn1Value = await getSideSheetValue(sideSheet, DETAILS_SECTION, RRN_1_ITEM);
+            console.log('RRN 1 shown in details:', rrn1Value);
+            
+            expect(rrn1Value).toBe('008035538885');
     });
 
     test('RRN 2 UniqueID', async({page}) =>{
@@ -393,33 +365,16 @@ test.describe('Filters', () => {
             const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
             await expect(submitButton).toBeEnabled();
             await submitButton.click();
-            
             console.log('Submitted UniqueID value:', await uniqueIDInput.inputValue());
 
-            const tableUniqueIDTD = page.locator('.transactions-wrapper__listing table tbody');
-            await expect(tableUniqueIDTD).toBeVisible({timeout: 15000});
-            const uniqueTransaction = page.locator('.advanced-table tr td:nth-child(1) p').first();
-            await expect(uniqueTransaction).toBeVisible({timeout: 15000});
-            await uniqueTransaction.click();
-            console.log('Details opened');
-            // Wait for side sheet to become visible before accessing its content
-            const sideSheet = page.locator('.side-sheet__container');
-            await expect(sideSheet).toBeVisible({timeout: 15000});
+            const sideSheet = await openDetailsSideSheet(page, 0);
+            const DETAILS_SECTION = testData.sideSheet.sections.DETAILS_CARD;
+            const RRN_2_ITEM = testData.sideSheet.items.RRN_2;
+            
+            const rrn2Value = await getSideSheetValue(sideSheet, DETAILS_SECTION, RRN_2_ITEM);
+            console.log('RRN 2 shown in details:', rrn2Value);
 
-            const itemIndex = 2; // ← change this to 0 / 1 / 2 / 3
-
-            const uniqueIDDetail = page
-              .locator('.side-sheet__container .side-sheet__content .list-card:nth-child(5)')
-              .locator('.list-card__content .list-card__item.transaction-list-item')
-              .nth(itemIndex)
-              .locator('p')
-              .nth(1)        // second <p> (value container)
-              .locator('span');
-
-            const uniqueIDText = (await uniqueIDDetail.textContent({timeout: 15000}))?.trim();
-            console.log('RRN 2 shown in details:', uniqueIDText);
-
-            expect(uniqueIDText).toBe('127532730688');
+            expect(rrn2Value).toBe('127532730688');
     });
 
     test('RRN 3 UniqueID', async({page}) =>{
@@ -446,36 +401,26 @@ test.describe('Filters', () => {
             await submitButton.click();
             
             console.log('Submitted RRN 3 value:', await uniqueIDInput.inputValue());
+            const sideSheet = await openDetailsSideSheet(page, 0);
 
-            const tableUniqueIDTD = page.locator('.transactions-wrapper__listing table tbody');
-            await expect(tableUniqueIDTD).toBeVisible({timeout: 15000});
-            const uniqueTransaction = page.locator('.advanced-table tr td:nth-child(1) p').first();
-            await expect(uniqueTransaction).toBeVisible({timeout: 15000});
-            await uniqueTransaction.click();
-            console.log('Details opened');
-            // Wait for side sheet to become visible before accessing its content
-            const sideSheet = page.locator('.side-sheet__container');
-            await expect(sideSheet).toBeVisible({timeout: 15000});
+            const DETAILS_SECTION = testData.sideSheet.sections.DETAILS_CARD;
+            const RRN_3_ITEM = testData.sideSheet.items.RRN_3;
+            
+            const rrn3Value = await getSideSheetValue(sideSheet, DETAILS_SECTION, RRN_3_ITEM);
+            console.log('RRN 3 shown in details:', rrn3Value);
 
-            const itemIndex = 3; // ← change this to 0 / 1 / 2 / 3
-
-            const uniqueIDDetail = page
-              .locator('.side-sheet__container .side-sheet__content .list-card:nth-child(5)')
-              .locator('.list-card__content .list-card__item.transaction-list-item')
-              .nth(itemIndex)
-              .locator('p')
-              .nth(1)        // second <p> (value container)
-              .locator('span');
-
-            const uniqueIDText = (await uniqueIDDetail.textContent({timeout: 15000}))?.trim();
-            console.log('RRN 3 shown in details:', uniqueIDText);
-
-            expect(uniqueIDText).toBe('8035538885');
+            expect(rrn3Value).toBe('8035538885');
     });
 
     test ('Terminal ID filter', async({page}) =>{
             await goToTransactions(page);
             await creationDateFilterRange(page, 'standardRange');
+
+            const sideSheet = await openDetailsSideSheet(page);
+            const DETAILS_SECTION = testData.sideSheet.sections.DETAILS_CARD;
+            const TERMINAL_ID_ITEM = testData.sideSheet.items.TERMINAL_ID;
+
+
             const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
             await expect(addFilterChip).toBeVisible({timeout: 10000});
             await addFilterChip.click();
@@ -486,10 +431,19 @@ test.describe('Filters', () => {
             const terminalIDFilter = page.locator('.add-filter-list .add-filter-list__item').nth(3);
             await terminalIDFilter.click();
 
-
             for(let i = 0; i < 5; i++){
                 let terminalItem = page.locator(await terminalIdFinder(i + 1)); 
                 await terminalItem.click();
             }
+            const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
+            await expect(submitButton).toBeEnabled();
+            await submitButton.click();
+
+            const tableTerminalIDTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(6) p');
+            await expect(tableTerminalIDTD).toBeVisible();
+            const terminalTxDateText = (await tableTerminalIDTD.textContent())?.trim();
+            console.log('Terminal ID shown in table:', terminalTxDateText);
+
+        
     });
 });

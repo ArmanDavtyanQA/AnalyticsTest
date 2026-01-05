@@ -2,7 +2,7 @@
   "creationDateFilters": {
     "standardRange": {
       "startDate": "01-12-2023",
-      "endDate": "01-02-2024"
+      "endDate": "01-02-2026"
     },
     "currentYear": {
       "startDate": "01-01-2024",
@@ -18,6 +18,26 @@
     },
     "exactDate": {
       "startDate": "01-02-2024"
+    }
+  },
+  "sideSheet": {
+    "sections": {
+      "DETAILS_CARD": 5
+    },
+    "items": {
+      "AUTHORIZATION_CODE": 0,
+      "RRN_1": 1,
+      "RRN_2": 2,
+      "RRN_3": 3,
+      "TERMINAL_ID": 4
+    },
+    "selectors": {
+      "container": ".side-sheet__container",
+      "content": ".side-sheet__content",
+      "card": ".list-card",
+      "itemContainer": ".list-card__content",
+      "item": ".list-card__item.transaction-list-item",
+      "valueSpan": "span"
     }
   }
 }
