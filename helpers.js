@@ -1,39 +1,22 @@
 import { expect } from '@playwright/test';
 import testData from './testData.json' assert { type: 'json' };
 
-export const terminalIdFinder = async (n) => {
-    return `.filter-popup__content .checked-list .checked-list__item:nth-child(${n}) label .controller__right`;
-}
-
 export const openDetailsSideSheet = async (page, rowIndex = 0) => {
-    // 1. Ensure transactions table is rendered
     const tableBody = page.locator(
         '.transactions-wrapper__listing table tbody'
     );
 
-    // Ensure any filter popup is closed before interacting
     await expect(page.locator('.filter-popup.show')).toBeHidden({ timeout: 5000 });
-
     await expect(tableBody).toBeVisible({ timeout: 15000 });
-
-    // Wait for loading skeletons to disappear
     await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30000 });
-
-    // 2. Click the ROW (not <p>, not text)
     const row = tableBody.locator('tr').nth(rowIndex);
     await expect(row).toBeVisible({ timeout: 15000 });
-
     await row.click();
-
-    // 3. Wait for side-sheet root container
     const sideSheet = page.locator('.side-sheet__container');
     await expect(sideSheet).toBeVisible({ timeout: 15000 });
-
-    // 4. Optional: ensure content is loaded (recommended)
     await expect(
         sideSheet.locator('.side-sheet__content')
     ).toBeVisible();
-
     return sideSheet;
 };
 
@@ -42,18 +25,15 @@ export const creationDateFilterRange = async (page, configKey = 'standardRange')
     if (!dateConfig) {
         throw new Error(`Date configuration '${configKey}' not found in testData.json`);
     }
-
     const creationDateFilter = page.locator('.filter-chip[data-filter-id="creationDate"]');
     await expect(creationDateFilter).toBeVisible({ timeout: 4000 });
     await creationDateFilter.click();
-
     const filterPopup = page.locator('.filter-popup.show');
     await expect(filterPopup).toBeVisible();
     const transactionStartDateInput = page.locator('input[name="transactionStartDate"]');
     const transactionEndDateInput = page.locator('input[name="trasnactionEndDate"]');
     await expect(transactionStartDateInput).toBeVisible();
     await transactionStartDateInput.fill(dateConfig.startDate);
-
     if (dateConfig.endDate) {
         const endDateVisible = await transactionEndDateInput.isVisible().catch(() => false);
         if (endDateVisible) {
@@ -74,12 +54,8 @@ export const creationDateFilterRange = async (page, configKey = 'standardRange')
  */
 export const getSideSheetValue = async (sideSheet, sectionIndex, itemIndex) => {
     const config = testData.sideSheet;
-
-    // Resolve indices if strings are provided
     const sectionIdx = typeof sectionIndex === 'string' ? config.sections[sectionIndex] : sectionIndex;
     const itemIdx = typeof itemIndex === 'string' ? config.items[itemIndex] : itemIndex;
-
-    // Build selector path using constants
     const cardPath = `${config.selectors.card}:nth-child(${sectionIdx})`;
     const itemPath = `${config.selectors.item}`;
     const valuePath = `${config.selectors.valueSpan}`;
@@ -104,7 +80,6 @@ export const getSideSheetValue = async (sideSheet, sectionIndex, itemIndex) => {
 
         return value.trim();
     } catch (error) {
-        // Debugging: Log available items in the section
         try {
             const items = sideSheet
                 .locator(config.selectors.content)
@@ -150,12 +125,8 @@ export const resetFilters = async (page) => {
  * @returns {Locator} The filter item locator scoped to the visible .add-filter container
  */
 export const getFilterByLabel = async (page, labelText) => {
-    // Ensure the .add-filter popup is visible before querying
     const addFilterPopup = page.locator('.add-filter');
     await expect(addFilterPopup).toBeVisible({ timeout: 5000 });
-
-    // Query only within the visible popup container to avoid detached nodes
     const trimmedLabel = labelText.trim();
-
     return addFilterPopup.locator('.add-filter-list .add-filter-list__item', { hasText: new RegExp(`^${trimmedLabel}$`, 'i') });
 };

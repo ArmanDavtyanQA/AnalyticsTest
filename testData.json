@@ -2,7 +2,7 @@
   "creationDateFilters": {
     "standardRange": {
       "startDate": "01-12-2023",
-      "endDate": "01-02-2026"
+      "endDate": "03-02-2026"
     },
     "currentYear": {
       "startDate": "01-01-2024",
@@ -29,7 +29,7 @@
       "RRN_1": 1,
       "RRN_2": 2,
       "RRN_3": 3,
-      "TERMINAL_ID": 4
+      "TERMINAL_ID": 2
     },
     "selectors": {
       "container": ".side-sheet__container",

@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-import { creationDateFilterRange, terminalIdFinder, openDetailsSideSheet, getSideSheetValue, resetFilters, getFilterByLabel } from '../helpers';
+import { creationDateFilterRange, openDetailsSideSheet, getSideSheetValue, resetFilters, getFilterByLabel } from '../helpers';
 // import config from '../config.js';
 import testData from '../testData.json' assert { type: 'json' };
 
@@ -414,64 +414,46 @@ test.describe('Filters', () => {
 
     test('Terminal ID filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-
         const sideSheet = await openDetailsSideSheet(page);
-
         const terminalIdValue = await getSideSheetValue(
             sideSheet,
-            'DETAILS_CARD',
-            'TERMINAL_ID'
+            1,
+            1
         );
-
         console.log('Terminal ID from first transaction details:', terminalIdValue);
-
-        await sideSheet.locator('.side-sheet__container .side-sheet__header__top .dismiss-svg-icon').click();
-        await expect(sideSheet).toBeHidden({ timeout: 5000 });
+        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(sideSheet).toBeHidden({ timeout: 15000 });
         console.log('Closed side sheet');
-
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
         await addFilterChip.click();
-
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
-
-        // Select "Terminal ID" filter
         const terminalIDFilter = await getFilterByLabel(page, 'Տերմինալ ID');
         await expect(terminalIDFilter).toBeVisible();
         await terminalIDFilter.click();
-
-        // ─────────────────────────────────────────────
-        // Fill Terminal ID value
-        // ─────────────────────────────────────────────
-        const terminalIDSearchInput = page.locator(
-            '.filter-popup__container input'
-        );
-
-        await expect(terminalIDSearchInput).toBeVisible();
+        const terminalIDSearchInput = page.locator('.filter-popup:visible [name="search"]');
+        await expect(terminalIDSearchInput).toBeVisible({ timeout: 10000 });
         await terminalIDSearchInput.fill(terminalIdValue);
-
         console.log('Searching for Terminal ID:', terminalIdValue);
-
-        // Submit filter
+        const resultItem = page.locator('.filter-popup:visible .checked-list__item').filter({ hasText: terminalIdValue }).first();
+        await expect(resultItem).toBeVisible({ timeout: 10000 });
+        await resultItem.click();
+        console.log('Checked terminal ID from list');
         const submitButton = page.locator(
             '.filter-popup:visible .filter-popup__footer button[type="submit"]'
         );
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
-
-        // ─────────────────────────────────────────────
-        // Validate filtered result
-        // ─────────────────────────────────────────────
-        const tableTerminalIDTD = page.locator(
-            '.transactions-wrapper__listing table tbody tr:first-child td:nth-child(6) p'
-        );
-
-        await expect(tableTerminalIDTD).toBeVisible();
-
-        const terminalTxDateText = (await tableTerminalIDTD.textContent())?.trim();
-        console.log('Terminal ID shown in table:', terminalTxDateText);
-
-        expect(terminalTxDateText).toBe(terminalIdValue);
+        console.log('Applied Terminal ID filter');
+        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
+        await expect(tableBody).toBeVisible({ timeout: 15000 });
+        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30000 });
+        const filteredSideSheet = await openDetailsSideSheet(page);
+        const terminalIdActualValue = await getSideSheetValue(filteredSideSheet, 1, 1);
+        console.log('Terminal ID shown in details after filter:', terminalIdActualValue);
+        expect(terminalIdActualValue).toBe(terminalIdValue);
+        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
     });
 });
