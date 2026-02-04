@@ -1,10 +1,9 @@
 const { test, expect } = require('@playwright/test');
 import { creationDateFilterRange, openDetailsSideSheet, getSideSheetValue, resetFilters, getFilterByLabel } from '../helpers';
-// import config from '../config.js';
+import { filterDropdown } from '../utils/filters/filterDropdown';
 import testData from '../testData.json' assert { type: 'json' };
 
 async function login(page) {
-    // Shim process.env in browser context to avoid app code errors that block load
     await page.addInitScript(() => {
         window.process = window.process || { env: {} };
     });
@@ -14,12 +13,10 @@ async function login(page) {
         timeout: 90000,
     });
 
-    // Clear localStorage and sessionStorage after navigating to app URL (safe here)
     await page.evaluate(() => {
         localStorage.clear();
         sessionStorage.clear();
     }).catch(() => {
-        // Ignore if storage clear fails (e.g., auth redirect still in progress)
     });
 
     const h1 = page.locator('h1').first();
@@ -40,14 +37,10 @@ async function login(page) {
 
     const dashboardUrl = 'https://sme-ecosystem-pos-analytics.test.ameriabank.am/dashboard/applications-list';
     const otpUrl = 'https://sme-ecosystem-pos-analytics.test.ameriabank.am/otp-verification-required';
-
-    // Wait for either dashboard or OTP verification
     await page.waitForURL(
         url => url.toString().startsWith(dashboardUrl) || url.toString().startsWith(otpUrl),
         { timeout: 100000 }
     );
-
-    // If OTP verification is required, fill the six inputs and submit
     if (page.url().startsWith(otpUrl)) {
         const otpInputs = page.locator('input:not([readonly])');
         await expect(otpInputs.first()).toBeEditable({ timeout: 10000 });
@@ -64,23 +57,17 @@ async function login(page) {
 
         await expect(page).toHaveURL(dashboardUrl);
     } else {
-        // Otherwise should already be on dashboard
         await expect(page).toHaveURL(dashboardUrl);
     }
 } async function goToTransactions(page) {
-    // Verify Applications History page header is present
     const applicationsHistoryHeader = page.locator('.application-list__top p').first();
     await expect(applicationsHistoryHeader).toBeVisible();
     await expect(applicationsHistoryHeader).toContainText('Հայտերի պատմություն');
-
-    // Verify Transactions navigation item exists and is active
     const transactionsNavLink = page.locator(
         '.navigation-block .navigation-block__inner:nth-child(2) .navigation-item:nth-child(2) .navigation-item__inner a p'
     );
     await expect(transactionsNavLink).toBeVisible();
     await expect(transactionsNavLink).toContainText('Գործարքներ');
-
-    // Navigate to Transactions by clicking the nav item
     const transactionsNavAnchor = page.locator(
         '.navigation-block .navigation-block__inner:nth-child(2) .navigation-item:nth-child(2) .navigation-item__inner a'
     );
@@ -94,24 +81,16 @@ async function login(page) {
 test.describe('Filters', () => {
     test.setTimeout(120000);
     test.beforeEach(async ({ page }) => {
-        // Clear browser state (context-level cookies work regardless of URL)
         await page.context().clearCookies();
-
-        // Perform login (handles navigation to app URL and clears storage there)
         await login(page);
-
-        // Wait for stable post-login UI element (dashboard is ready)
         const dashboardHeader = page.locator('.application-list__top p').first();
         await expect(dashboardHeader).toBeVisible({ timeout: 15000 });
         await expect(dashboardHeader).toContainText('Հայտերի պատմություն');
-
-        // Navigate to transactions page and reset any lingering filters
         await goToTransactions(page);
         await resetFilters(page);
     });
 
     test('Test environment login and navigation', async ({ page }) => {
-        // Verify we're on transactions page with clean state (beforeEach handles this)
         const transactionPageTitle = page.locator('.header__inner p');
         await expect(transactionPageTitle).toBeVisible();
         await expect(transactionPageTitle).toContainText('Գործարքներ');
@@ -146,11 +125,9 @@ test.describe('Filters', () => {
         await creationDateFilter.click();
         const filterPopup = page.locator('.filter-popup.show');
         await expect(filterPopup).toBeVisible();
-        // Await container alignment block to be visible
         const switcher = filterPopup.locator('.filter-popup__container .switcher').first();
         await expect(switcher).toBeVisible({ timeout: 10000 });
         await switcher.click();
-
         const transactionEndDateInput = page.locator('input[name="trasnactionEndDate"]');
         await expect(transactionEndDateInput).toBeHidden();
         const transactionStartDateInput = page.locator('input[name="transactionStartDate"]');
@@ -158,12 +135,10 @@ test.describe('Filters', () => {
         const dateConfig = testData.creationDateFilters.exactDate;
         await transactionStartDateInput.fill(dateConfig.startDate);
         await transactionStartDateInput.press('Enter');
-
         const filterPopupAfter = page.locator('.filter-popup.show');
         await expect(filterPopupAfter).toBeHidden({ timeout: 5000 });
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
         await expect(tableBody).toBeVisible({ timeout: 10000 });
-
         const tableCreationDateTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(3) p');
         await expect(tableCreationDateTD).toBeVisible();
         const txDateText = (await tableCreationDateTD.textContent()).trim();
@@ -180,32 +155,22 @@ test.describe('Filters', () => {
 
     test('Card number filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
         await addFilterChip.click();
-
-        // Explicitly wait for .add-filter popup to be visible before calling helper
-        // This prevents querying detached nodes when tests run in parallel
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible({ timeout: 5000 });
-
-        // getFilterByLabel now waits internally, but we ensure popup is ready first
         const cardNumberFilter = await getFilterByLabel(page, 'Քարտի համար');
         await expect(cardNumberFilter).toBeVisible();
         await cardNumberFilter.click();
-
         const cardNumber = page.locator('.filter-popup__container .input [name="cardNumber"]');
         await cardNumber.fill('0348');
         const cardNumberInput = page.locator('[name="cardNumber"]');
         console.log('Submitted card number:', await cardNumberInput.inputValue());
         const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
-
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
         console.log('Card number filter applied');
-
-
         const tableCardNumberTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(4) p');
         await expect(tableCardNumberTD).toBeVisible();
         const cardTxDateText = (await tableCardNumberTD.textContent())?.trim();
@@ -217,24 +182,18 @@ test.describe('Filters', () => {
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
         await addFilterChip.click();
-
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
-
         const exactAmountFilter = await getFilterByLabel(page, 'Գումար');
         await expect(exactAmountFilter).toBeVisible();
         await exactAmountFilter.click();
-
         const amount = page.locator('.filter-popup__container .input [name="amountStartRange"]');
         const amountInput = page.locator('[name="amountStartRange"]');
-
         await amount.fill('100');
         console.log('Submitted amount:', await amountInput.inputValue());
-
         const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
-
         const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
         await expect(tableAmountTD).toBeVisible();
         const amountTxDateText = (await tableAmountTD.textContent())?.trim();
@@ -248,14 +207,11 @@ test.describe('Filters', () => {
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
         await addFilterChip.click();
-
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
-
         const amountRangeFilter = await getFilterByLabel(page, 'Գումար');
         await expect(amountRangeFilter).toBeVisible();
         await amountRangeFilter.click();
-
         const filterPopupVisible = page.locator('.filter-popup:visible');
         const amountSwitcher = filterPopupVisible.locator('.filter-popup__container .switcher').first();
         await expect(amountSwitcher).toBeVisible({ timeout: 10000 });
@@ -264,15 +220,12 @@ test.describe('Filters', () => {
         const amountEnd = page.locator('.filter-popup__container .input [name="amountEndRange"]');
         const amountStartInput = page.locator('[name="amountStartRange"]');
         const amountEndInput = page.locator('[name="amountEndRange"]');
-
         await amountStart.fill('50');
         await amountEnd.fill('150');
         console.log('Submitted amount range:', await amountStartInput.inputValue(), '-', await amountEndInput.inputValue());
-
         const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
-
         const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
         await expect(tableAmountTD).toBeVisible();
         const amountTxDateText = (await tableAmountTD.textContent())?.trim();
@@ -280,7 +233,6 @@ test.describe('Filters', () => {
         expect(amountValue).toBeGreaterThanOrEqual(50);
         expect(amountValue).toBeLessThanOrEqual(150);
         console.log('Amount shown in table:', amountTxDateText);
-
     });
 
     test('Authorization Code UniqueID', async ({ page }) => {
@@ -288,14 +240,11 @@ test.describe('Filters', () => {
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
         await addFilterChip.click();
-
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
-
         const uniqueIDFilter = await getFilterByLabel(page, 'Ունիկալ ID');
         await expect(uniqueIDFilter).toBeVisible();
         await uniqueIDFilter.click();
-
         const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
         await uniqueIdDropdown.click();
         const authCodeOption = page.locator('.select__options .select__option').filter({ hasText: 'Authorization Code' });
@@ -306,15 +255,11 @@ test.describe('Filters', () => {
         const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
-
-
         console.log('Submitted Authorization Code value:', await uniqueIDInput.inputValue());
-
         const sideSheet = await openDetailsSideSheet(page);
         const authCodeValue = await getSideSheetValue(sideSheet, 'DETAILS_CARD', 'AUTHORIZATION_CODE');
         console.log('Authorization Code shown in details:', authCodeValue);
         expect(authCodeValue).toBe('937065');
-
     });
 
     test('RRN 1 UniqueID', async ({ page }) => {
@@ -322,14 +267,11 @@ test.describe('Filters', () => {
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
         await addFilterChip.click();
-
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
-
         const uniqueIDFilter = await getFilterByLabel(page, 'Ունիկալ ID');
         await expect(uniqueIDFilter).toBeVisible();
         await uniqueIDFilter.click();
-
         const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
         await uniqueIdDropdown.click();
         const rrn1Option = page.locator('.select__options .select__option').filter({ hasText: 'RRN 1' });
@@ -341,11 +283,9 @@ test.describe('Filters', () => {
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
         console.log('Submitted UniqueID value:', await uniqueIDInput.inputValue());
-
         const sideSheet = await openDetailsSideSheet(page, 0);
         const rrn1Value = await getSideSheetValue(sideSheet, 'DETAILS_CARD', 'RRN_1');
         console.log('RRN 1 shown in details:', rrn1Value);
-
         expect(rrn1Value).toBe('603219937057');
     });
 
@@ -354,14 +294,11 @@ test.describe('Filters', () => {
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
         await addFilterChip.click();
-
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
-
         const uniqueIDFilter = await getFilterByLabel(page, 'Ունիկալ ID');
         await expect(uniqueIDFilter).toBeVisible();
         await uniqueIDFilter.click();
-
         const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
         await uniqueIdDropdown.click();
         const rrn2Option = page.locator('.select__options .select__option').filter({ hasText: 'RRN 2' });
@@ -373,11 +310,9 @@ test.describe('Filters', () => {
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
         console.log('Submitted UniqueID value:', await uniqueIDInput.inputValue());
-
         const sideSheet = await openDetailsSideSheet(page);
         const rrn2Value = await getSideSheetValue(sideSheet, 'DETAILS_CARD', 'RRN_2');
         console.log('RRN 2 shown in details:', rrn2Value);
-
         expect(rrn2Value).toBe('128685432785');
     });
 
@@ -386,14 +321,11 @@ test.describe('Filters', () => {
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
         await expect(addFilterChip).toBeVisible({ timeout: 10000 });
         await addFilterChip.click();
-
         const addFilterPopup = page.locator('.add-filter');
         await expect(addFilterPopup).toBeVisible();
-
         const uniqueIDFilter = await getFilterByLabel(page, 'Ունիկալ ID');
         await expect(uniqueIDFilter).toBeVisible();
         await uniqueIDFilter.click();
-
         const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
         await uniqueIdDropdown.click();
         const rrn3Option = page.locator('.select__options .select__option').filter({ hasText: 'RRN 3' });
@@ -405,7 +337,6 @@ test.describe('Filters', () => {
         await expect(submitButton).toBeEnabled();
         await submitButton.click();
         console.log('Submitted RRN 3 value:', await uniqueIDInput.inputValue());
-
         const sideSheet = await openDetailsSideSheet(page);
         const rrn3Value = await getSideSheetValue(sideSheet, 'DETAILS_CARD', 'RRN_3');
         console.log('RRN 3 shown in details:', rrn3Value);
@@ -432,20 +363,10 @@ test.describe('Filters', () => {
         const terminalIDFilter = await getFilterByLabel(page, 'Տերմինալ ID');
         await expect(terminalIDFilter).toBeVisible();
         await terminalIDFilter.click();
-        const terminalIDSearchInput = page.locator('.filter-popup:visible [name="search"]');
-        await expect(terminalIDSearchInput).toBeVisible({ timeout: 10000 });
-        await terminalIDSearchInput.fill(terminalIdValue);
-        console.log('Searching for Terminal ID:', terminalIdValue);
-        const resultItem = page.locator('.filter-popup:visible .checked-list__item').filter({ hasText: terminalIdValue }).first();
-        await expect(resultItem).toBeVisible({ timeout: 10000 });
-        await resultItem.click();
-        console.log('Checked terminal ID from list');
-        const submitButton = page.locator(
-            '.filter-popup:visible .filter-popup__footer button[type="submit"]'
-        );
-        await expect(submitButton).toBeEnabled();
-        await submitButton.click();
-        console.log('Applied Terminal ID filter');
+
+        // Use the robust helper for exact matching and checkbox interaction
+        await filterDropdown(page, terminalIdValue);
+        console.log('Applied Terminal ID filter using helper');
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
         await expect(tableBody).toBeVisible({ timeout: 15000 });
         await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30000 });
@@ -456,4 +377,39 @@ test.describe('Filters', () => {
         await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
         await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
     });
+
+    test('Serial number filter', async ({ page }) => {
+        await creationDateFilterRange(page, 'standardRange');
+        const sideSheet = await openDetailsSideSheet(page);
+        const serialNumberValue = await getSideSheetValue(
+            sideSheet,
+            4,
+            1
+        );
+        console.log('Serial number from first transaction details:', serialNumberValue);
+        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(sideSheet).toBeHidden({ timeout: 15000 });
+        console.log('Closed side sheet');
+        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
+        await addFilterChip.click();
+        const addFilterPopup = page.locator('.add-filter');
+        await expect(addFilterPopup).toBeVisible();
+        const serialNumberFilter = await getFilterByLabel(page, 'Սերիական համար');
+        await expect(serialNumberFilter).toBeVisible();
+        await serialNumberFilter.click();
+
+        // Use the robust helper for exact matching and checkbox interaction
+        await filterDropdown(page, serialNumberValue);
+        console.log('Applied Serial number filter using helper');
+        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
+        await expect(tableBody).toBeVisible({ timeout: 15000 });
+        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30000 });
+        const filteredSideSheet = await openDetailsSideSheet(page);
+        const serialNumberActualValue = await getSideSheetValue(filteredSideSheet, 4, 1);
+        console.log('Serial number shown in details after filter:', serialNumberActualValue);
+        expect(serialNumberActualValue).toBe(serialNumberValue);
+        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
+    })
 });
