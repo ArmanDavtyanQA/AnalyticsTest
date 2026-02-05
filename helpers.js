@@ -41,6 +41,35 @@ export const creationDateFilterRange = async (page, configKey = 'standardRange')
         }
     }
     await transactionStartDateInput.press('Enter');
+    const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
+    await expect(submitButton).toBeEnabled();
+    await submitButton.click();
+}
+
+export const settlementDateFilterRange = async (page, configKey = 'settlementDate') => {
+    const dateConfig = testData.creationDateFilters[configKey];
+    if (!dateConfig) {
+        throw new Error(`Date configuration '${configKey}' not found in testData.json`);
+    }
+    const settlementDateFilter = page.locator('.filter-chip[data-filter-id="settlementDate"]');
+    await expect(settlementDateFilter).toBeVisible({ timeout: 4000 });
+    await settlementDateFilter.click();
+    const filterPopup = page.locator('.filter-popup.show');
+    await expect(filterPopup).toBeVisible();
+    const transactionStartDateInput = page.locator('input[name="transactionStartDate"]');
+    const transactionEndDateInput = page.locator('input[name="trasnactionEndDate"]');
+    await expect(transactionStartDateInput).toBeVisible();
+    await transactionStartDateInput.fill(dateConfig.startDate);
+    if (dateConfig.endDate) {
+        const endDateVisible = await transactionEndDateInput.isVisible().catch(() => false);
+        if (endDateVisible) {
+            await transactionEndDateInput.fill(dateConfig.endDate);
+        }
+    }
+    await transactionStartDateInput.press('Enter');
+    const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
+    await expect(submitButton).toBeEnabled();
+    await submitButton.click();
 }
 
 /**

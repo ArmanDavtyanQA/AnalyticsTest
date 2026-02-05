@@ -18,6 +18,10 @@
     },
     "exactDate": {
       "startDate": "01-02-2026"
+    },
+    "settlementDate": {
+      "startDate": "01-12-2025",
+      "endDate": "03-02-2026"
     }
   },
   "sideSheet": {

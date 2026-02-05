@@ -153,6 +153,108 @@ test.describe('Filters', () => {
         await console.log('Exact date case passed');
     });
 
+    test('Settlement date filter with exact date', async ({ page }) => {
+        await creationDateFilterRange(page, 'standardRange');
+        const sideSheet = await openDetailsSideSheet(page);
+        const settlementDateValue = await getSideSheetValue(sideSheet, 1, 3);
+        console.log('Settlement date from first transaction details:', settlementDateValue);
+        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(sideSheet).toBeHidden({ timeout: 15000 });
+        console.log('Closed side sheet');
+        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
+        await addFilterChip.click();
+        const addFilterPopup = page.locator('.add-filter');
+        await expect(addFilterPopup).toBeVisible();
+        const settlementDateFilter = await getFilterByLabel(page, 'Հաշվանցման ամսաթիվ');
+        await expect(settlementDateFilter).toBeVisible();
+        await settlementDateFilter.click();
+        const dateOnly = settlementDateValue.split(' ')[0];
+        const filterPopup = page.locator('.filter-popup:visible, .filter-popup.show').first();
+        await expect(filterPopup).toBeVisible({ timeout: 10000 });
+
+        const settlementStartDate = filterPopup.locator('input[name*="tartDate"]').first();
+        const settlementEndDate = filterPopup.locator('input[name*="ndDate"]').first();
+
+        const switcher = filterPopup.locator('.switcher').first();
+        if (await switcher.isVisible() && await settlementStartDate.isHidden()) {
+            await switcher.click();
+            await page.waitForTimeout(1000);
+        }
+
+        await expect(settlementStartDate).toBeVisible({ timeout: 15000 });
+        await settlementStartDate.fill(dateOnly);
+
+        if (await settlementEndDate.isVisible()) {
+            await settlementEndDate.fill(dateOnly);
+        }
+
+        const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
+        await expect(submitButton).toBeVisible({ timeout: 10000 });
+        await submitButton.click();
+
+        console.log('Applied Settlement date filter');
+        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
+        await expect(tableBody).toBeVisible({ timeout: 15000 });
+        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30000 });
+        const filteredSideSheet = await openDetailsSideSheet(page);
+        const settlementDateActualValue = await getSideSheetValue(filteredSideSheet, 1, 3);
+        console.log('Settlement date shown in details after filter:', settlementDateActualValue);
+        expect(settlementDateActualValue).toBe(settlementDateValue);
+        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
+    })
+
+    test('Settlement date filter with date range', async ({ page }) => {
+        await creationDateFilterRange(page, 'standardRange');
+        const sideSheet = await openDetailsSideSheet(page);
+        const settlementDateValue = await getSideSheetValue(sideSheet, 1, 3);
+        console.log('Settlement date from first transaction details:', settlementDateValue);
+        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(sideSheet).toBeHidden({ timeout: 15000 });
+        console.log('Closed side sheet');
+        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
+        await addFilterChip.click();
+        const addFilterPopup = page.locator('.add-filter');
+        await expect(addFilterPopup).toBeVisible({ timeout: 5000 });
+        const settlementDateFilter = await getFilterByLabel(page, 'Հաշվանցման ամսաթիվ');
+        await expect(settlementDateFilter).toBeVisible();
+        await settlementDateFilter.click();
+        const dateOnly = settlementDateValue.split(' ')[0];
+        const filterPopup = page.locator('.filter-popup:visible, .filter-popup.show').first();
+        await expect(filterPopup).toBeVisible({ timeout: 10000 });
+
+        const settlementStartDate = filterPopup.locator('input[name*="tartDate"]').first();
+        const settlementEndDate = filterPopup.locator('input[name*="ndDate"]').first();
+
+        const switcher = filterPopup.locator('.switcher').first();
+        await switcher.click();
+        await page.waitForTimeout(1000);
+
+        await expect(settlementStartDate).toBeVisible({ timeout: 15000 });
+        await settlementStartDate.fill(dateOnly);
+
+        if (await settlementEndDate.isVisible()) {
+            await settlementEndDate.fill(dateOnly);
+        }
+
+        const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
+        await expect(submitButton).toBeVisible({ timeout: 10000 });
+        await submitButton.click();
+
+        console.log('Applied Settlement date filter');
+        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
+        await expect(tableBody).toBeVisible({ timeout: 15000 });
+        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30000 });
+        const filteredSideSheet = await openDetailsSideSheet(page);
+        const settlementDateActualValue = await getSideSheetValue(filteredSideSheet, 1, 3);
+        console.log('Settlement date shown in details after filter:', settlementDateActualValue);
+        expect(settlementDateActualValue).toBe(settlementDateValue);
+        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
+    })
+
     test('Card number filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
         const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
@@ -363,8 +465,6 @@ test.describe('Filters', () => {
         const terminalIDFilter = await getFilterByLabel(page, 'Տերմինալ ID');
         await expect(terminalIDFilter).toBeVisible();
         await terminalIDFilter.click();
-
-        // Use the robust helper for exact matching and checkbox interaction
         await filterDropdown(page, terminalIdValue);
         console.log('Applied Terminal ID filter using helper');
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
@@ -398,8 +498,6 @@ test.describe('Filters', () => {
         const serialNumberFilter = await getFilterByLabel(page, 'Սերիական համար');
         await expect(serialNumberFilter).toBeVisible();
         await serialNumberFilter.click();
-
-        // Use the robust helper for exact matching and checkbox interaction
         await filterDropdown(page, serialNumberValue);
         console.log('Applied Serial number filter using helper');
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
@@ -412,4 +510,5 @@ test.describe('Filters', () => {
         await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
         await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
     })
+
 });
