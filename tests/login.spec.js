@@ -540,4 +540,33 @@ test.describe('Filters', () => {
         await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
     })
 
+    test('Address filter', async ({ page }) => {
+        await creationDateFilterRange(page, 'standardRange');
+        const sideSheet = await openDetailsSideSheet(page);
+        const addressValue = await getSideSheetValue(sideSheet, 3, 2);
+        console.log('Address from first transaction details:', addressValue);
+        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(sideSheet).toBeHidden({ timeout: 15000 });
+        console.log('Closed side sheet');
+        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
+        await addFilterChip.click();
+        const addFilterPopup = page.locator('.add-filter');
+        await expect(addFilterPopup).toBeVisible();
+        const addressFilter = await getFilterByLabel(page, 'Հասցե');
+        await expect(addressFilter).toBeVisible();
+        await addressFilter.click();
+        await filterDropdown(page, addressValue);
+        console.log('Applied Address filter using helper');
+        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
+        await expect(tableBody).toBeVisible({ timeout: 15000 });
+        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30000 });
+        const filteredSideSheet = await openDetailsSideSheet(page);
+        const addressActualValue = await getSideSheetValue(filteredSideSheet, 3, 2);
+        console.log('Address shown in details after filter:', addressActualValue);
+        expect(addressActualValue).toBe(addressValue);
+        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
+    })
+
 });
