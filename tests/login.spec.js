@@ -511,4 +511,33 @@ test.describe('Filters', () => {
         await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
     })
 
+    test('Merchant name filter', async ({ page }) => {
+        await creationDateFilterRange(page, 'standardRange');
+        const sideSheet = await openDetailsSideSheet(page);
+        const merchantNameValue = (await page.locator('.side-sheet__container .side-sheet__header .side-sheet__title').textContent()).trim();
+        console.log('Merchant name from first transaction details:', merchantNameValue);
+        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(sideSheet).toBeHidden({ timeout: 15000 });
+        console.log('Closed side sheet');
+        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
+        await addFilterChip.click();
+        const addFilterPopup = page.locator('.add-filter');
+        await expect(addFilterPopup).toBeVisible();
+        const merchantNameFilter = await getFilterByLabel(page, 'ԱՍԿ անվանում');
+        await expect(merchantNameFilter).toBeVisible();
+        await merchantNameFilter.click();
+        await filterDropdown(page, merchantNameValue);
+        console.log('Applied Merchant name filter using helper');
+        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
+        await expect(tableBody).toBeVisible({ timeout: 15000 });
+        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30000 });
+        const filteredSideSheet = await openDetailsSideSheet(page);
+        const merchantNameActualValue = (await filteredSideSheet.locator('.side-sheet__title').textContent()).trim();
+        console.log('Merchant name shown in details after filter:', merchantNameActualValue);
+        expect(merchantNameActualValue).toBe(merchantNameValue);
+        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
+    })
+
 });

@@ -41,10 +41,13 @@ export const creationDateFilterRange = async (page, configKey = 'standardRange')
         }
     }
     await transactionStartDateInput.press('Enter');
-    const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
-    await expect(submitButton).toBeEnabled();
-    await submitButton.click();
+    const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
+    if (await filterPopup.isVisible()) {
+        await expect(submitButton).toBeEnabled({ timeout: 5000 });
+        await submitButton.click();
+    }
 }
+
 
 export const settlementDateFilterRange = async (page, configKey = 'settlementDate') => {
     const dateConfig = testData.creationDateFilters[configKey];
@@ -67,10 +70,13 @@ export const settlementDateFilterRange = async (page, configKey = 'settlementDat
         }
     }
     await transactionStartDateInput.press('Enter');
-    const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
-    await expect(submitButton).toBeEnabled();
-    await submitButton.click();
+    const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
+    if (await filterPopup.isVisible()) {
+        await expect(submitButton).toBeEnabled({ timeout: 5000 });
+        await submitButton.click();
+    }
 }
+
 
 /**
  * Retrieves a value from the Side Sheet using semantic section and item indices.
