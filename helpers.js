@@ -1,6 +1,48 @@
 import { expect } from '@playwright/test';
 import testData from './testData.json' assert { type: 'json' };
 
+/**
+ * Generic Helpers
+ */
+
+export const wait = async (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+export const takeScreenshot = async (page, name) => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `test-results/${name}-${timestamp}.png`;
+    await page.screenshot({ path: filename, fullPage: true });
+    return filename;
+};
+
+export const isElementVisible = async (locator, timeout = 5000) => {
+    try {
+        await locator.waitFor({ state: 'visible', timeout });
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+export const fillWithRetry = async (locator, value, retries = 3) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await locator.clear();
+            await locator.fill(value);
+            return;
+        } catch (error) {
+            if (i === retries - 1) throw error;
+            await wait(1000);
+        }
+    }
+};
+
+export const parseDate = (value) => {
+    if (!value) return null;
+    const [dd, mm, yyyy] = value.split('-').map(Number);
+    return new Date(yyyy, mm - 1, dd);
+};
+
+
 export const openDetailsSideSheet = async (page, rowIndex = 0) => {
     const tableBody = page.locator(
         '.transactions-wrapper__listing table tbody'
@@ -20,14 +62,14 @@ export const openDetailsSideSheet = async (page, rowIndex = 0) => {
     return sideSheet;
 };
 
-export const creationDateFilterRange = async (page, configKey = 'standardRange') => {
+export const applyDateFilter = async (page, filterId, configKey = 'standardRange') => {
     const dateConfig = testData.creationDateFilters[configKey];
     if (!dateConfig) {
         throw new Error(`Date configuration '${configKey}' not found in testData.json`);
     }
-    const creationDateFilter = page.locator('.filter-chip[data-filter-id="creationDate"]');
-    await expect(creationDateFilter).toBeVisible({ timeout: 4000 });
-    await creationDateFilter.click();
+    const filterChip = page.locator(`.filter-chip[data-filter-id="${filterId}"]`);
+    await expect(filterChip).toBeVisible({ timeout: 4000 });
+    await filterChip.click();
     const filterPopup = page.locator('.filter-popup.show');
     await expect(filterPopup).toBeVisible();
     const transactionStartDateInput = page.locator('input[name="transactionStartDate"]');
@@ -48,34 +90,14 @@ export const creationDateFilterRange = async (page, configKey = 'standardRange')
     }
 }
 
+export const creationDateFilterRange = async (page, configKey = 'standardRange') => {
+    return applyDateFilter(page, 'creationDate', configKey);
+}
 
 export const settlementDateFilterRange = async (page, configKey = 'settlementDate') => {
-    const dateConfig = testData.creationDateFilters[configKey];
-    if (!dateConfig) {
-        throw new Error(`Date configuration '${configKey}' not found in testData.json`);
-    }
-    const settlementDateFilter = page.locator('.filter-chip[data-filter-id="settlementDate"]');
-    await expect(settlementDateFilter).toBeVisible({ timeout: 4000 });
-    await settlementDateFilter.click();
-    const filterPopup = page.locator('.filter-popup.show');
-    await expect(filterPopup).toBeVisible();
-    const transactionStartDateInput = page.locator('input[name="transactionStartDate"]');
-    const transactionEndDateInput = page.locator('input[name="trasnactionEndDate"]');
-    await expect(transactionStartDateInput).toBeVisible();
-    await transactionStartDateInput.fill(dateConfig.startDate);
-    if (dateConfig.endDate) {
-        const endDateVisible = await transactionEndDateInput.isVisible().catch(() => false);
-        if (endDateVisible) {
-            await transactionEndDateInput.fill(dateConfig.endDate);
-        }
-    }
-    await transactionStartDateInput.press('Enter');
-    const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
-    if (await filterPopup.isVisible()) {
-        await expect(submitButton).toBeEnabled({ timeout: 5000 });
-        await submitButton.click();
-    }
+    return applyDateFilter(page, 'settlementDate', configKey);
 }
+
 
 
 /**
@@ -164,4 +186,17 @@ export const getFilterByLabel = async (page, labelText) => {
     await expect(addFilterPopup).toBeVisible({ timeout: 5000 });
     const trimmedLabel = labelText.trim();
     return addFilterPopup.locator('.add-filter-list .add-filter-list__item', { hasText: new RegExp(`^${trimmedLabel}$`, 'i') });
+};
+
+/**
+ * Opens "Add Filter" popup and selects one by label.
+ */
+export const selectFilterByLabel = async (page, labelText) => {
+    const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
+    await expect(addFilterChip).toBeVisible({ timeout: 10000 });
+    await addFilterChip.click();
+
+    const filterOption = await getFilterByLabel(page, labelText);
+    await expect(filterOption).toBeVisible();
+    await filterOption.click();
 };

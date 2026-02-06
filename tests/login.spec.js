@@ -1,5 +1,5 @@
-const { test, expect } = require('@playwright/test');
-import { creationDateFilterRange, openDetailsSideSheet, getSideSheetValue, resetFilters, getFilterByLabel } from '../helpers';
+import { test, expect } from '@playwright/test';
+import { creationDateFilterRange, openDetailsSideSheet, getSideSheetValue, resetFilters, selectFilterByLabel, parseDate } from '../helpers';
 import { filterDropdown } from '../utils/filters/filterDropdown';
 import testData from '../testData.json' assert { type: 'json' };
 
@@ -107,13 +107,9 @@ test.describe('Filters', () => {
         const txDateText = (await tableCreationDateTD.textContent()).trim();
         const startDateText = testData.creationDateFilters.standardRange.startDate;
         const endDateText = testData.creationDateFilters.standardRange.endDate;
-        const parse = (value) => {
-            const [dd, mm, yyyy] = value.split('-').map(Number);
-            return new Date(yyyy, mm - 1, dd);
-        };
-        const txDate = parse(txDateText);
-        const startDate = parse(startDateText);
-        const endDate = parse(endDateText);
+        const txDate = parseDate(txDateText);
+        const startDate = parseDate(startDateText);
+        const endDate = parseDate(endDateText);
         expect(txDate.getTime()).toBeGreaterThanOrEqual(startDate.getTime());
         expect(txDate.getTime()).toBeLessThanOrEqual(endDate.getTime());
         await console.log('Date range case passed');
@@ -143,12 +139,8 @@ test.describe('Filters', () => {
         await expect(tableCreationDateTD).toBeVisible();
         const txDateText = (await tableCreationDateTD.textContent()).trim();
         const startDateText = await transactionStartDateInput.inputValue();
-        const parse = (value) => {
-            const [dd, mm, yyyy] = value.split('-').map(Number);
-            return new Date(yyyy, mm - 1, dd);
-        };
-        const txDate = parse(txDateText);
-        const startDate = parse(startDateText);
+        const txDate = parseDate(txDateText);
+        const startDate = parseDate(startDateText);
         expect(txDate.getTime()).toBeGreaterThanOrEqual(startDate.getTime());
         await console.log('Exact date case passed');
     });
@@ -161,14 +153,7 @@ test.describe('Filters', () => {
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
         await expect(sideSheet).toBeHidden({ timeout: 15000 });
         console.log('Closed side sheet');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const settlementDateFilter = await getFilterByLabel(page, 'Հաշվանցման ամսաթիվ');
-        await expect(settlementDateFilter).toBeVisible();
-        await settlementDateFilter.click();
+        await selectFilterByLabel(page, 'Հաշվանցման ամսաթիվ');
         const dateOnly = settlementDateValue.split(' ')[0];
         const filterPopup = page.locator('.filter-popup:visible, .filter-popup.show').first();
         await expect(filterPopup).toBeVisible({ timeout: 10000 });
@@ -213,14 +198,7 @@ test.describe('Filters', () => {
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
         await expect(sideSheet).toBeHidden({ timeout: 15000 });
         console.log('Closed side sheet');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible({ timeout: 5000 });
-        const settlementDateFilter = await getFilterByLabel(page, 'Հաշվանցման ամսաթիվ');
-        await expect(settlementDateFilter).toBeVisible();
-        await settlementDateFilter.click();
+        await selectFilterByLabel(page, 'Հաշվանցման ամսաթիվ');
         const dateOnly = settlementDateValue.split(' ')[0];
         const filterPopup = page.locator('.filter-popup:visible, .filter-popup.show').first();
         await expect(filterPopup).toBeVisible({ timeout: 10000 });
@@ -257,14 +235,7 @@ test.describe('Filters', () => {
 
     test('Card number filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible({ timeout: 5000 });
-        const cardNumberFilter = await getFilterByLabel(page, 'Քարտի համար');
-        await expect(cardNumberFilter).toBeVisible();
-        await cardNumberFilter.click();
+        await selectFilterByLabel(page, 'Քարտի համար');
         const cardNumber = page.locator('.filter-popup__container .input [name="cardNumber"]');
         await cardNumber.fill('0348');
         const cardNumberInput = page.locator('[name="cardNumber"]');
@@ -281,14 +252,7 @@ test.describe('Filters', () => {
 
     test('Exact amount filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const exactAmountFilter = await getFilterByLabel(page, 'Գումար');
-        await expect(exactAmountFilter).toBeVisible();
-        await exactAmountFilter.click();
+        await selectFilterByLabel(page, 'Գումար');
         const amount = page.locator('.filter-popup__container .input [name="amountStartRange"]');
         const amountInput = page.locator('[name="amountStartRange"]');
         await amount.fill('100');
@@ -306,14 +270,7 @@ test.describe('Filters', () => {
 
     test('Amount range filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const amountRangeFilter = await getFilterByLabel(page, 'Գումար');
-        await expect(amountRangeFilter).toBeVisible();
-        await amountRangeFilter.click();
+        await selectFilterByLabel(page, 'Գումար');
         const filterPopupVisible = page.locator('.filter-popup:visible');
         const amountSwitcher = filterPopupVisible.locator('.filter-popup__container .switcher').first();
         await expect(amountSwitcher).toBeVisible({ timeout: 10000 });
@@ -339,14 +296,7 @@ test.describe('Filters', () => {
 
     test('Authorization Code UniqueID', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const uniqueIDFilter = await getFilterByLabel(page, 'Ունիկալ ID');
-        await expect(uniqueIDFilter).toBeVisible();
-        await uniqueIDFilter.click();
+        await selectFilterByLabel(page, 'Ունիկալ ID');
         const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
         await uniqueIdDropdown.click();
         const authCodeOption = page.locator('.select__options .select__option').filter({ hasText: 'Authorization Code' });
@@ -366,14 +316,7 @@ test.describe('Filters', () => {
 
     test('RRN 1 UniqueID', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const uniqueIDFilter = await getFilterByLabel(page, 'Ունիկալ ID');
-        await expect(uniqueIDFilter).toBeVisible();
-        await uniqueIDFilter.click();
+        await selectFilterByLabel(page, 'Ունիկալ ID');
         const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
         await uniqueIdDropdown.click();
         const rrn1Option = page.locator('.select__options .select__option').filter({ hasText: 'RRN 1' });
@@ -393,14 +336,7 @@ test.describe('Filters', () => {
 
     test('RRN 2 UniqueID', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const uniqueIDFilter = await getFilterByLabel(page, 'Ունիկալ ID');
-        await expect(uniqueIDFilter).toBeVisible();
-        await uniqueIDFilter.click();
+        await selectFilterByLabel(page, 'Ունիկալ ID');
         const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
         await uniqueIdDropdown.click();
         const rrn2Option = page.locator('.select__options .select__option').filter({ hasText: 'RRN 2' });
@@ -420,14 +356,7 @@ test.describe('Filters', () => {
 
     test('RRN 3 UniqueID', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const uniqueIDFilter = await getFilterByLabel(page, 'Ունիկալ ID');
-        await expect(uniqueIDFilter).toBeVisible();
-        await uniqueIDFilter.click();
+        await selectFilterByLabel(page, 'Ունիկալ ID');
         const uniqueIdDropdown = page.locator('.unique-id-filter__col .select__input');
         await uniqueIdDropdown.click();
         const rrn3Option = page.locator('.select__options .select__option').filter({ hasText: 'RRN 3' });
@@ -457,14 +386,7 @@ test.describe('Filters', () => {
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
         await expect(sideSheet).toBeHidden({ timeout: 15000 });
         console.log('Closed side sheet');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const terminalIDFilter = await getFilterByLabel(page, 'Տերմինալ ID');
-        await expect(terminalIDFilter).toBeVisible();
-        await terminalIDFilter.click();
+        await selectFilterByLabel(page, 'Տերմինալ ID');
         await filterDropdown(page, terminalIdValue);
         console.log('Applied Terminal ID filter using helper');
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
@@ -490,14 +412,7 @@ test.describe('Filters', () => {
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
         await expect(sideSheet).toBeHidden({ timeout: 15000 });
         console.log('Closed side sheet');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const serialNumberFilter = await getFilterByLabel(page, 'Սերիական համար');
-        await expect(serialNumberFilter).toBeVisible();
-        await serialNumberFilter.click();
+        await selectFilterByLabel(page, 'Սերիական համար');
         await filterDropdown(page, serialNumberValue);
         console.log('Applied Serial number filter using helper');
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
@@ -519,14 +434,7 @@ test.describe('Filters', () => {
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
         await expect(sideSheet).toBeHidden({ timeout: 15000 });
         console.log('Closed side sheet');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const merchantNameFilter = await getFilterByLabel(page, 'ԱՍԿ անվանում');
-        await expect(merchantNameFilter).toBeVisible();
-        await merchantNameFilter.click();
+        await selectFilterByLabel(page, 'ԱՍԿ անվանում');
         await filterDropdown(page, merchantNameValue);
         console.log('Applied Merchant name filter using helper');
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
@@ -548,14 +456,7 @@ test.describe('Filters', () => {
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
         await expect(sideSheet).toBeHidden({ timeout: 15000 });
         console.log('Closed side sheet');
-        const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
-        await expect(addFilterChip).toBeVisible({ timeout: 10000 });
-        await addFilterChip.click();
-        const addFilterPopup = page.locator('.add-filter');
-        await expect(addFilterPopup).toBeVisible();
-        const addressFilter = await getFilterByLabel(page, 'Հասցե');
-        await expect(addressFilter).toBeVisible();
-        await addressFilter.click();
+        await selectFilterByLabel(page, 'Հասցե');
         await filterDropdown(page, addressValue);
         console.log('Applied Address filter using helper');
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
