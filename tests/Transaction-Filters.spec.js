@@ -202,25 +202,19 @@ test.describe('Filters', () => {
         const dateOnly = settlementDateValue.split(' ')[0];
         const filterPopup = page.locator('.filter-popup:visible, .filter-popup.show').first();
         await expect(filterPopup).toBeVisible({ timeout: 10000 });
-
         const settlementStartDate = filterPopup.locator('input[name*="tartDate"]').first();
         const settlementEndDate = filterPopup.locator('input[name*="ndDate"]').first();
-
         const switcher = filterPopup.locator('.switcher').first();
         await switcher.click();
         await page.waitForTimeout(1000);
-
         await expect(settlementStartDate).toBeVisible({ timeout: 15000 });
         await settlementStartDate.fill(dateOnly);
-
         if (await settlementEndDate.isVisible()) {
             await settlementEndDate.fill(dateOnly);
         }
-
         const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
         await expect(submitButton).toBeVisible({ timeout: 10000 });
         await submitButton.click();
-
         console.log('Applied Settlement date filter');
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
         await expect(tableBody).toBeVisible({ timeout: 15000 });
@@ -467,6 +461,7 @@ test.describe('Filters', () => {
         console.log('Address shown in details after filter:', addressActualValue);
         expect(addressActualValue).toBe(addressValue);
         await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
+        console.log('Closed side sheet');
         await expect(filteredSideSheet).toBeHidden({ timeout: 10000 });
     })
 
