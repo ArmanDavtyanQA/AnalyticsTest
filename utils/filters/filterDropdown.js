@@ -1,8 +1,5 @@
 const { expect } = require('@playwright/test');
-/**
- * Custom error class for Filter Dropdown operations
- * Provides structured context for debugging failures in complex UI states.
- */
+
 class FilterDropdownError extends Error {
     constructor(message, step, originalError = null) {
         super(message);
@@ -14,8 +11,6 @@ class FilterDropdownError extends Error {
 }
 
 /**
- * Robust Playwright helper for automating filter dropdown interactions with exact value matching.
- * 
  * @param {import('@playwright/test').Page} page - Playwright page object
  * @param {string} searchValue - The exact text value to find and select
  * @param {Object} [options] - Configuration options

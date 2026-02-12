@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { creationDateFilterRange, openDetailsSideSheet, getSideSheetValue, resetFilters, selectFilterByLabel, parseDate } from '../helpers';
 import { filterDropdown } from '../utils/filters/filterDropdown';
+import { Sidebar } from '../pages/components/sidebar.component';
 import testData from '../testData.json' assert { type: 'json' };
 
 async function login(page) {
@@ -63,15 +64,9 @@ async function login(page) {
     const applicationsHistoryHeader = page.locator('.application-list__top p').first();
     await expect(applicationsHistoryHeader).toBeVisible();
     await expect(applicationsHistoryHeader).toContainText('Հայտերի պատմություն');
-    const transactionsNavLink = page.locator(
-        '.navigation-block .navigation-block__inner:nth-child(2) .navigation-item:nth-child(2) .navigation-item__inner a p'
-    );
-    await expect(transactionsNavLink).toBeVisible();
-    await expect(transactionsNavLink).toContainText('Գործարքներ');
-    const transactionsNavAnchor = page.locator(
-        '.navigation-block .navigation-block__inner:nth-child(2) .navigation-item:nth-child(2) .navigation-item__inner a'
-    );
-    await transactionsNavAnchor.click();
+
+    const sidebar = new Sidebar(page);
+    await sidebar.navigate('Գործարքներ');
 
     const transactionPageTitle = page.locator('.header__inner p');
     await expect(transactionPageTitle).toBeVisible();
