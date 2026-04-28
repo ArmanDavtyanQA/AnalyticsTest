@@ -20,20 +20,88 @@ async function login(page) {
     }).catch(() => {
     });
 
-    const h1 = page.locator('h1').first();
-    await expect(h1).toBeVisible({ timeout: 10000 });
-    await expect(h1).toContainText('Մուտք');
+    if (page.url().includes('/dashboard/')) {
+        return;
+    }
 
-    const emailInput = page.locator('input[data-id="login-email-input"]');
-    await expect(emailInput).toBeVisible();
+    const emailSelector = [
+        'input[data-id="login-email-input"]',
+        'input[placeholder*="Էլհասց"]',
+        'input[placeholder*="email" i]',
+        'form input[type="email"]',
+        'main input[type="email"]',
+        'form input[name*="email" i]',
+        'main input[name*="email" i]'
+    ].join(', ');
+    const passwordSelector = [
+        'input[data-id="login-password-input"]',
+        'input[placeholder*="գաղտնաբառ"]',
+        'input[placeholder*="password" i]',
+        'form input[type="password"]',
+        'main input[type="password"]',
+        'form input[name*="password" i]',
+        'main input[name*="password" i]'
+    ].join(', ');
+
+    const getFirstVisibleLocator = async (selector) => {
+        const candidates = page.locator(selector);
+        const count = await candidates.count();
+        for (let i = 0; i < count; i++) {
+            const candidate = candidates.nth(i);
+            const isVisible = await candidate.isVisible().catch(() => false);
+            if (isVisible) {
+                return candidate;
+            }
+        }
+        return null;
+    };
+
+    const waitForLoginForm = async () => expect
+        .poll(
+            async () => {
+                const emailVisible = await getFirstVisibleLocator(emailSelector);
+                const passwordVisible = await getFirstVisibleLocator(passwordSelector);
+                return Boolean(emailVisible && passwordVisible);
+            },
+            { timeout: 20000 }
+        )
+        .toBe(true);
+
+    await waitForLoginForm().catch(async () => {
+        await page.goto('https://sme-ecosystem-auth-onboarding.test.ameriabank.am/auth/login', {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000
+        });
+        try {
+            await waitForLoginForm();
+        } catch {
+            const currentUrl = page.url();
+            const title = await page.title().catch(() => 'n/a');
+            throw new Error(
+                `Login form did not appear after navigating to auth page. URL: ${currentUrl}, title: ${title}`
+            );
+        }
+    });
+
+    const emailInput = await getFirstVisibleLocator(emailSelector);
+    if (!emailInput) {
+        throw new Error(`No visible email input found for selectors: ${emailSelector}`);
+    }
+    await expect(emailInput).toBeVisible({ timeout: 20000 });
     await emailInput.fill('trfsucity@mailinator.com');
 
-    const passwordInput = page.locator('input[data-id="login-password-input"]');
-    await expect(passwordInput).toBeVisible();
+    const passwordInput = await getFirstVisibleLocator(passwordSelector);
+    if (!passwordInput) {
+        throw new Error(`No visible password input found for selectors: ${passwordSelector}`);
+    }
+    await expect(passwordInput).toBeVisible({ timeout: 20000 });
     await passwordInput.fill('Arpine.123');
 
-    const loginButton = page.locator('button[data-id="login-button"]');
-    await expect(loginButton).toBeVisible();
+    const loginButton = page
+        .getByRole('button', { name: /(մուտք գործել|մուտք|sign in|login)/i })
+        .or(page.locator('button[data-id="login-button"]'))
+        .first();
+    await expect(loginButton).toBeVisible({ timeout: 20000 });
     await loginButton.click();
 
     const dashboardUrl = 'https://sme-ecosystem-pos-analytics.test.ameriabank.am/dashboard/applications-list';

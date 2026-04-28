@@ -29,16 +29,17 @@ export const waitForGridToLoad = async (page, timeout = 15000) => {
         await expect(visibleTableBody).toBeVisible({ timeout });
     }
 
-    const skeletons = page.locator('.react-loading-skeleton');
-    const hasSkeletons = await skeletons.count();
-    if (hasSkeletons > 0) {
-        await expect
-            .poll(
-                async () => page.locator('.react-loading-skeleton:visible').count(),
-                { timeout }
-            )
-            .toBe(0);
-    }
+    await expect
+        .poll(
+            async () => {
+                const visibleSkeletonsInGrid = await visibleTableBody
+                    .locator('.react-loading-skeleton:visible')
+                    .count();
+                return visibleSkeletonsInGrid === 0;
+            },
+            { timeout }
+        )
+        .toBe(true);
 };
 
 export const takeScreenshot = async (page, name) => {
