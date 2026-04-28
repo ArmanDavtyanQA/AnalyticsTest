@@ -39,11 +39,20 @@ async function filterDropdown(page, searchValue, options = {}) {
         await searchInput.clear();
         await searchInput.fill(searchValue);
 
-        // Wait for potential debounce/network filter
-        await page.waitForTimeout(config.searchDebounce);
-
-        // 3. Find exact match
+        // 3. Wait for the result list to settle (count stable across two consecutive samples)
         const items = container.locator('.checked-list .checked-list__item');
+        await expect
+            .poll(
+                async () => {
+                    const first = await items.count();
+                    await page.waitForLoadState('networkidle', { timeout: 1500 }).catch(() => { });
+                    const second = await items.count();
+                    return first === second && second >= 0 ? second : -1;
+                },
+                { timeout: config.timeout, message: 'Filter search results did not stabilize' }
+            )
+            .toBeGreaterThanOrEqual(0);
+
         const count = await items.count();
 
         if (count === 0) {
@@ -78,12 +87,7 @@ async function filterDropdown(page, searchValue, options = {}) {
             await checkbox.evaluate(el => el.click());
 
             if (config.verifySelection) {
-                // Wait a moment for UI state to update before verifying
-                await page.waitForTimeout(600);
-                const isChecked = await checkbox.isChecked();
-                if (!isChecked) {
-                    throw new FilterDropdownError(`Checkbox verification failed for value "${searchValue}" - selection did not persist after evaluate(click)`, 'VERIFY_SELECTION');
-                }
+                await expect(checkbox, `Checkbox for "${searchValue}" did not become checked`).toBeChecked({ timeout: 5_000 });
             }
         }
 
@@ -146,7 +150,7 @@ async function clearFilterDropdown(page) {
     const container = page.locator('.filter-popup.show').first();
     const searchInput = container.locator('.search input[name="search"]');
     await searchInput.clear();
-    await page.waitForTimeout(500);
+    await expect(searchInput).toHaveValue('', { timeout: 2_000 });
 }
 
 module.exports = {

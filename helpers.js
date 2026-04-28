@@ -103,7 +103,7 @@ export const applyDateFilter = async (page, filterId, configKey = 'standardRange
         throw new Error(`Date configuration '${configKey}' not found in testData.json`);
     }
     const filterChip = page.locator(`.filter-chip[data-filter-id="${filterId}"]`);
-    await expect(filterChip).toBeVisible({ timeout: 4000 });
+    await expect(filterChip).toBeVisible({ timeout: 15_000 });
     await filterChip.click();
     const filterPopup = page.locator('.filter-popup.show');
     await expect(filterPopup).toBeVisible();
@@ -123,6 +123,8 @@ export const applyDateFilter = async (page, filterId, configKey = 'standardRange
         await expect(submitButton).toBeEnabled({ timeout: 5000 });
         await submitButton.click();
     }
+    await expect(filterPopup).toBeHidden({ timeout: 10_000 });
+    await waitForGridToLoad(page);
 }
 
 export const creationDateFilterRange = async (page, configKey = 'standardRange') => {
@@ -197,12 +199,28 @@ export const getSideSheetValue = async (sideSheet, sectionIndex, itemIndex) => {
 
 export const resetFilters = async (page) => {
     const resetButton = page.locator('.filter-chip[data-filter-id="reset"]');
-    const resetButtonExists = await resetButton.count() > 0;
+    if ((await resetButton.count()) === 0) {
+        return;
+    }
 
-    if (resetButtonExists) {
-        await expect(resetButton).toBeVisible({ timeout: 5000 });
-        await resetButton.click();
-        await page.waitForTimeout(500);
+    await expect(resetButton).toBeVisible({ timeout: 5000 });
+    await resetButton.click();
+
+    // Reset is considered successful if EITHER the reset chip disappears OR the
+    // grid finishes reloading. Failures from BOTH signals must surface so dirty
+    // state is not silently swallowed.
+    try {
+        await expect(resetButton).toBeHidden({ timeout: 5000 });
+    } catch (chipHiddenError) {
+        try {
+            await waitForGridToLoad(page);
+        } catch (gridLoadError) {
+            throw new Error(
+                'resetFilters: reset chip remained visible AND grid did not finish loading. ' +
+                `Reset chip "toBeHidden" error: ${chipHiddenError.message}. ` +
+                `Grid load error: ${gridLoadError.message}`
+            );
+        }
     }
 };
 
