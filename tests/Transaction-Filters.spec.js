@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { creationDateFilterRange, openDetailsSideSheet, getSideSheetValue, resetFilters, selectFilterByLabel, parseDate } from '../helpers';
+import { creationDateFilterRange, openDetailsSideSheet, getSideSheetValue, resetFilters, selectFilterByLabel, parseDate, waitForGridToLoad } from '../helpers';
 import { filterDropdown } from '../utils/filters/filterDropdown';
 import { Sidebar } from '../pages/components/sidebar.component';
 import testData from '../testData.json' assert { type: 'json' };
@@ -60,17 +60,17 @@ async function login(page) {
     } else {
         await expect(page).toHaveURL(dashboardUrl);
     }
-} async function goToTransactions(page) {
+}
+
+async function goToTransactions(page) {
     const applicationsHistoryHeader = page.locator('.application-list__top p').first();
     await expect(applicationsHistoryHeader).toBeVisible();
     await expect(applicationsHistoryHeader).toContainText('Հայտերի պատմություն');
 
     const sidebar = new Sidebar(page);
     await sidebar.navigate('Գործարքներ');
-
-    const transactionPageTitle = page.locator('.header__inner p');
-    await expect(transactionPageTitle).toBeVisible();
-    await expect(transactionPageTitle).toContainText('Գործարքներ');
+    await page.waitForURL('**/dashboard/transactions-reports', { timeout: 20000 });
+    await waitForGridToLoad(page);
 }
 
 test.describe('Filters', () => {
@@ -86,9 +86,8 @@ test.describe('Filters', () => {
     });
 
     test('Test environment login and navigation', async ({ page }) => {
-        const transactionPageTitle = page.locator('.header__inner p');
-        await expect(transactionPageTitle).toBeVisible();
-        await expect(transactionPageTitle).toContainText('Գործարքներ');
+        await expect(page).toHaveURL(/\/dashboard\/transactions-reports$/);
+        await waitForGridToLoad(page);
     });
 
     test('Creation date filter with date range', async ({ page }) => {

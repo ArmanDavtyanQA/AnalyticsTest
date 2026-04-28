@@ -7,6 +7,40 @@ import testData from './testData.json' assert { type: 'json' };
 
 export const wait = async (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+export const waitForGridToLoad = async (page, timeout = 15000) => {
+    const tableBodySelectors = [
+        '.transactions-wrapper__listing table tbody',
+        'main table tbody',
+        'table tbody'
+    ];
+
+    let visibleTableBody = null;
+    for (const selector of tableBodySelectors) {
+        const locator = page.locator(selector).first();
+        const isVisible = await locator.isVisible().catch(() => false);
+        if (isVisible) {
+            visibleTableBody = locator;
+            break;
+        }
+    }
+
+    if (!visibleTableBody) {
+        visibleTableBody = page.locator(tableBodySelectors.join(', ')).first();
+        await expect(visibleTableBody).toBeVisible({ timeout });
+    }
+
+    const skeletons = page.locator('.react-loading-skeleton');
+    const hasSkeletons = await skeletons.count();
+    if (hasSkeletons > 0) {
+        await expect
+            .poll(
+                async () => page.locator('.react-loading-skeleton:visible').count(),
+                { timeout }
+            )
+            .toBe(0);
+    }
+};
+
 export const takeScreenshot = async (page, name) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `test-results/${name}-${timestamp}.png`;

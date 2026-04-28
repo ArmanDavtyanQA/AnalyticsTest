@@ -1,8 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { creationDateFilterRange, openDetailsSideSheet, getSideSheetValue, resetFilters, selectFilterByLabel, parseDate } from '../../helpers';
+import { creationDateFilterRange, openDetailsSideSheet, getSideSheetValue, resetFilters, selectFilterByLabel, parseDate, waitForGridToLoad } from '../../helpers';
 import { filterDropdown } from '../../utils/filters/filterDropdown';
 import { Sidebar } from '../../pages/components/sidebar.component';
-import { waitForGridToLoad } from '../../helpers/grid.helper';
 import testData from '../../testData.json' assert { type: 'json' };
 
 async function login(page) {
@@ -61,18 +60,19 @@ async function login(page) {
     } else {
         await expect(page).toHaveURL(dashboardUrl);
     }
-} async function goToTransactions(page) {
+}
+
+async function goToTransactions(page) {
     const applicationsHistoryHeader = page.locator('.application-list__top p').first();
     await expect(applicationsHistoryHeader).toBeVisible();
     await expect(applicationsHistoryHeader).toContainText('Հայտերի պատմություն');
 
     const sidebar = new Sidebar(page);
     await sidebar.navigate('Հաշվետվություններ');
+    await page.waitForURL('**/dashboard/transactions-reports-builder', { timeout: 20000 });
     await waitForGridToLoad(page);
 
-    const transactionPageTitle = page.locator('.header__inner p');
-    await expect(transactionPageTitle).toBeVisible();
-    await expect(transactionPageTitle).toContainText('Հաշվետվություններ');
+    await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
 }
 
 test.describe('Reports', () => {
@@ -88,9 +88,8 @@ test.describe('Reports', () => {
 
     test('Test environment login and navigation', async ({ page }) => {
         await goToTransactions(page);
-        const transactionPageTitle = page.locator('.header__inner p');
-        await expect(transactionPageTitle).toBeVisible();
-        await expect(transactionPageTitle).toContainText('Հաշվետվություններ');
+        await expect(page).toHaveURL(/\/dashboard\/transactions-reports-builder$/);
+        await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
         console.log("Navigated to Reports page");
     });
 
