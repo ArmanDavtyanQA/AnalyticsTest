@@ -7,39 +7,124 @@ import testData from './testData.json' assert { type: 'json' };
 
 export const wait = async (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const waitForGridToLoad = async (page, timeout = 15000) => {
-    const tableBodySelectors = [
-        '.transactions-wrapper__listing table tbody',
-        'main table tbody',
-        'table tbody'
-    ];
+const TABLE_BODY_SELECTOR =
+    '.transactions-wrapper__listing table tbody, main table tbody, table tbody';
+const TABLE_SELECTOR =
+    '.transactions-wrapper__listing table, main table, table';
+// Localized "no results" copy. The empty state replaces <tbody> with a <div>
+// that contains this message when the API returns zero rows.
+const EMPTY_STATE_TEXT = /արդյունքներ չեն գտնվել|no results found|no data/i;
 
-    let visibleTableBody = null;
-    for (const selector of tableBodySelectors) {
-        const locator = page.locator(selector).first();
-        const isVisible = await locator.isVisible().catch(() => false);
-        if (isVisible) {
-            visibleTableBody = locator;
-            break;
-        }
-    }
+const EMPTY_STATE_ERROR =
+    'Transactions grid loaded but returned 0 rows ("Ցավոք, արդյունքներ չեն գտնվել"). ' +
+    'The currently applied filters match no data on the test environment. ' +
+    'Widen the date range in testData.json (or pick a value with known data) and rerun.';
 
-    if (!visibleTableBody) {
-        visibleTableBody = page.locator(tableBodySelectors.join(', ')).first();
-        await expect(visibleTableBody).toBeVisible({ timeout });
-    }
+// The grid is backed by a single GraphQL endpoint. Every filter / navigation that
+// reloads the grid fires a POST whose operationName is "GetTransactions". The
+// response is the slow part (~20-35s for wide ranges), so syncing on it lets us
+// wait for the *actual* reload instead of racing against the previously rendered
+// (stale) rows before deciding "data vs 0 rows".
+const GRID_GRAPHQL_URL = '/proxy/graphql';
+const GRID_OPERATION = 'GetTransactions';
 
-    await expect
-        .poll(
-            async () => {
-                const visibleSkeletonsInGrid = await visibleTableBody
-                    .locator('.react-loading-skeleton:visible')
-                    .count();
-                return visibleSkeletonsInGrid === 0;
+/**
+ * Resolves when the transactions grid's GraphQL query responds.
+ *
+ * Register this *before* the action that triggers the reload (filter submit,
+ * navigation), then await it afterwards. Resolves to `null` (never rejects) if no
+ * matching response arrives within the timeout, so callers can always fall back to
+ * the DOM-based {@link waitForGridToLoad}.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {number} timeout
+ */
+export const waitForGridResponse = (page, timeout = 60000) =>
+    page
+        .waitForResponse(
+            (res) => {
+                if (!res.url().includes(GRID_GRAPHQL_URL)) return false;
+                if (res.request().method() !== 'POST') return false;
+                const body = res.request().postData() || '';
+                return body.includes(GRID_OPERATION);
             },
             { timeout }
         )
-        .toBe(true);
+        .catch(() => null);
+
+/**
+ * Waits for the transactions grid to reach a terminal state.
+ *
+ * The grid can legitimately take ~30s+ to resolve for wide date ranges that return
+ * large datasets, so the default timeout is generous. The loading skeleton rows live
+ * *inside* <tbody>, so a visible <tbody> alone does not mean "loaded"; we wait until
+ * those skeletons clear (-> data) or the empty-state placeholder appears (-> 0 rows).
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {number} timeout
+ * @param {{ allowEmpty?: boolean }} [options]
+ *   - `allowEmpty: false` (default): throw a clear error if the grid resolves to 0
+ *     rows. Use after applying a filter that is expected to match data, so a 0-row
+ *     result fails loudly instead of causing a confusing downstream timeout.
+ *   - `allowEmpty: true`: return normally on 0 rows. Use for navigation / reset,
+ *     where a previously persisted filter may legitimately leave the grid empty and
+ *     a later step (e.g. resetFilters) is responsible for recovering.
+ * @returns {Promise<'data' | 'empty'>} the terminal state that was reached.
+ */
+export const waitForGridToLoad = async (page, timeout = 90000, { allowEmpty = false } = {}) => {
+    let gridState = 'loading';
+    await expect
+        .poll(
+            async () => {
+                // Empty state: API returned 0 rows. Checked first because in this
+                // state <tbody> is replaced by the placeholder, so there are no
+                // skeletons to wait on.
+                const emptyVisible = await page
+                    .locator(TABLE_SELECTOR)
+                    .first()
+                    .locator('p', { hasText: EMPTY_STATE_TEXT })
+                    .first()
+                    .isVisible()
+                    .catch(() => false);
+                if (emptyVisible) {
+                    gridState = 'empty';
+                    return 'empty';
+                }
+
+                // Data state: <tbody> is visible AND all loading skeletons have
+                // resolved into real rows.
+                const tableBody = page.locator(TABLE_BODY_SELECTOR).first();
+                const tbodyVisible = await tableBody.isVisible().catch(() => false);
+                if (tbodyVisible) {
+                    const visibleSkeletons = await tableBody
+                        .locator('.react-loading-skeleton:visible')
+                        .count()
+                        .catch(() => 1);
+                    if (visibleSkeletons === 0) {
+                        gridState = 'data';
+                        return 'data';
+                    }
+                }
+
+                return 'loading';
+            },
+            {
+                timeout,
+                message:
+                    `Transactions grid still showing loading skeletons after ${timeout}ms. ` +
+                    'The GetTransactions GraphQL query has not returned. This usually means the ' +
+                    'current filter combination triggers a very slow/expensive backend query ' +
+                    '(e.g. a text filter applied over a very wide date range). Narrow the date ' +
+                    'range, use a filter value known to return data quickly, or raise the timeout.',
+            }
+        )
+        .not.toBe('loading');
+
+    if (gridState === 'empty' && !allowEmpty) {
+        throw new Error(EMPTY_STATE_ERROR);
+    }
+
+    return gridState;
 };
 
 export const takeScreenshot = async (page, name) => {
@@ -79,13 +164,14 @@ export const parseDate = (value) => {
 
 
 export const openDetailsSideSheet = async (page, rowIndex = 0) => {
-    const tableBody = page.locator(
-        '.transactions-wrapper__listing table tbody'
-    );
-
     await expect(page.locator('.filter-popup.show')).toBeHidden({ timeout: 5000 });
-    await expect(tableBody).toBeVisible({ timeout: 15000 });
-    await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30000 });
+
+    // Wait for either rows or the empty state, then surface a clear error if
+    // there are no rows to click. Otherwise this used to time out on
+    // `tbody.toBeVisible`, masking the real cause (filter returned 0 results).
+    await waitForGridToLoad(page);
+
+    const tableBody = page.locator('.transactions-wrapper__listing table tbody');
     const row = tableBody.locator('tr').nth(rowIndex);
     await expect(row).toBeVisible({ timeout: 15000 });
     await row.click();
@@ -117,6 +203,9 @@ export const applyDateFilter = async (page, filterId, configKey = 'standardRange
             await transactionEndDateInput.fill(dateConfig.endDate);
         }
     }
+    // Start listening for the grid reload BEFORE the submit so we don't miss it
+    // and don't read stale rows that are still on screen pre-reload.
+    const gridResponse = waitForGridResponse(page);
     await transactionStartDateInput.press('Enter');
     const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
     if (await filterPopup.isVisible()) {
@@ -124,6 +213,7 @@ export const applyDateFilter = async (page, filterId, configKey = 'standardRange
         await submitButton.click();
     }
     await expect(filterPopup).toBeHidden({ timeout: 10_000 });
+    await gridResponse;
     await waitForGridToLoad(page);
 }
 
@@ -213,7 +303,7 @@ export const resetFilters = async (page) => {
         await expect(resetButton).toBeHidden({ timeout: 5000 });
     } catch (chipHiddenError) {
         try {
-            await waitForGridToLoad(page);
+            await waitForGridToLoad(page, 90000, { allowEmpty: true });
         } catch (gridLoadError) {
             throw new Error(
                 'resetFilters: reset chip remained visible AND grid did not finish loading. ' +

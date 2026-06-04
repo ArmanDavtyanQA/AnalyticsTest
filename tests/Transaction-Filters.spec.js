@@ -6,6 +6,7 @@ import {
     resetFilters,
     selectFilterByLabel,
     parseDate,
+    waitForGridToLoad,
 } from '../helpers.js';
 import { filterDropdown } from '../utils/filters/filterDropdown.js';
 import { goToTransactions } from '../pages/flows/navigation.flow.js';
@@ -74,7 +75,7 @@ test.describe('Filters', () => {
     });
 
     test('Settlement date filter with exact date', async ({ page }) => {
-        await creationDateFilterRange(page, 'standardRange');
+        await creationDateFilterRange(page, 'recentRange');
         const sideSheet = await openDetailsSideSheet(page);
         const settlementDateValue = await getSideSheetValue(sideSheet, 1, 3);
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
@@ -102,9 +103,7 @@ test.describe('Filters', () => {
         await expect(submitButton).toBeVisible();
         await submitButton.click();
 
-        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
-        await expect(tableBody).toBeVisible();
-        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30_000 });
+        await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
         const settlementDateActualValue = await getSideSheetValue(filteredSideSheet, 1, 3);
@@ -114,7 +113,7 @@ test.describe('Filters', () => {
     });
 
     test('Settlement date filter with date range', async ({ page }) => {
-        await creationDateFilterRange(page, 'standardRange');
+        await creationDateFilterRange(page, 'recentRange');
         const sideSheet = await openDetailsSideSheet(page);
         const settlementDateValue = await getSideSheetValue(sideSheet, 1, 3);
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
@@ -139,9 +138,7 @@ test.describe('Filters', () => {
         await expect(submitButton).toBeVisible();
         await submitButton.click();
 
-        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
-        await expect(tableBody).toBeVisible();
-        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30_000 });
+        await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
         const settlementDateActualValue = await getSideSheetValue(filteredSideSheet, 1, 3);
@@ -272,7 +269,7 @@ test.describe('Filters', () => {
     });
 
     test('Terminal ID filter', async ({ page }) => {
-        await creationDateFilterRange(page, 'standardRange');
+        await creationDateFilterRange(page, 'recentRange');
         const sideSheet = await openDetailsSideSheet(page);
         const terminalIdValue = await getSideSheetValue(sideSheet, 1, 1);
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
@@ -281,9 +278,7 @@ test.describe('Filters', () => {
         await selectFilterByLabel(page, 'Տերմինալ ID');
         await filterDropdown(page, terminalIdValue);
 
-        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
-        await expect(tableBody).toBeVisible();
-        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30_000 });
+        await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
         expect(await getSideSheetValue(filteredSideSheet, 1, 1)).toBe(terminalIdValue);
@@ -292,7 +287,7 @@ test.describe('Filters', () => {
     });
 
     test('Serial number filter', async ({ page }) => {
-        await creationDateFilterRange(page, 'standardRange');
+        await creationDateFilterRange(page, 'recentRange');
         const sideSheet = await openDetailsSideSheet(page);
         const serialNumberValue = await getSideSheetValue(sideSheet, 4, 1);
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
@@ -301,9 +296,7 @@ test.describe('Filters', () => {
         await selectFilterByLabel(page, 'Սերիական համար');
         await filterDropdown(page, serialNumberValue);
 
-        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
-        await expect(tableBody).toBeVisible();
-        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30_000 });
+        await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
         expect(await getSideSheetValue(filteredSideSheet, 4, 1)).toBe(serialNumberValue);
@@ -312,7 +305,7 @@ test.describe('Filters', () => {
     });
 
     test('Merchant name filter', async ({ page }) => {
-        await creationDateFilterRange(page, 'standardRange');
+        await creationDateFilterRange(page, 'recentRange');
         const sideSheet = await openDetailsSideSheet(page);
         const merchantNameValue = ((await page
             .locator('.side-sheet__container .side-sheet__header .side-sheet__title')
@@ -323,9 +316,7 @@ test.describe('Filters', () => {
         await selectFilterByLabel(page, 'ԱՍԿ անվանում');
         await filterDropdown(page, merchantNameValue);
 
-        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
-        await expect(tableBody).toBeVisible();
-        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30_000 });
+        await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
         const merchantNameActualValue = ((await filteredSideSheet.locator('.side-sheet__title').textContent()) || '').trim();
@@ -335,7 +326,7 @@ test.describe('Filters', () => {
     });
 
     test('Address filter', async ({ page }) => {
-        await creationDateFilterRange(page, 'standardRange');
+        await creationDateFilterRange(page, 'recentRange');
         const sideSheet = await openDetailsSideSheet(page);
         const addressValue = await getSideSheetValue(sideSheet, 3, 2);
         await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
@@ -344,9 +335,7 @@ test.describe('Filters', () => {
         await selectFilterByLabel(page, 'Հասցե');
         await filterDropdown(page, addressValue);
 
-        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
-        await expect(tableBody).toBeVisible();
-        await expect(tableBody.locator('.react-loading-skeleton').first()).toBeHidden({ timeout: 30_000 });
+        await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
         expect(await getSideSheetValue(filteredSideSheet, 3, 2)).toBe(addressValue);

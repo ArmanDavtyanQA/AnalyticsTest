@@ -42,7 +42,7 @@ async function collapseSidebar(page) {
  */
 export async function goToTransactions(page) {
     if (page.url().includes(ROUTES.transactions)) {
-        await waitForGridToLoad(page);
+        await waitForGridToLoad(page, 90000, { allowEmpty: true });
         return;
     }
     await goToDashboard(page);
@@ -50,7 +50,7 @@ export async function goToTransactions(page) {
     await sidebar.navigate('Գործարքներ');
     await page.waitForURL(`**${ROUTES.transactions}`);
     await collapseSidebar(page);
-    await waitForGridToLoad(page);
+    await waitForGridToLoad(page, 90000, { allowEmpty: true });
 }
 
 /**
@@ -60,7 +60,7 @@ export async function goToTransactions(page) {
  */
 export async function goToReports(page) {
     if (page.url().includes(ROUTES.reports)) {
-        await waitForGridToLoad(page);
+        await waitForGridToLoad(page, 90000, { allowEmpty: true });
         await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
         return;
     }
@@ -69,6 +69,6 @@ export async function goToReports(page) {
     await sidebar.navigate('Հաշվետվություններ');
     await page.waitForURL(`**${ROUTES.reports}`);
     await collapseSidebar(page);
-    await waitForGridToLoad(page);
+    await waitForGridToLoad(page, 90000, { allowEmpty: true });
     await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
 }

@@ -11,7 +11,7 @@ module.exports = defineConfig({
     retries: process.env.CI ? 2 : 1,
     workers: process.env.CI ? 2 : 2,
 
-    timeout: 90_000,
+    timeout: 180_000,
     expect: {
         timeout: 10_000,
     },
