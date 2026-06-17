@@ -64,6 +64,10 @@ test.describe('Filters', () => {
         await transactionStartDateInput.press('Enter');
         await expect(filterPopup).toBeHidden();
 
+        // Wait for the filtered grid to actually reload before reading a row,
+        // otherwise we race against skeletons (or a not-yet-rendered row).
+        await waitForGridToLoad(page);
+
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
         const tableCreationDateTD = tableBody.locator('tr:first-child td:nth-child(3) p');
         await expect(tableBody).toBeVisible();
@@ -342,4 +346,6 @@ test.describe('Filters', () => {
         await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
         await expect(filteredSideSheet).toBeHidden();
     });
+
+
 });

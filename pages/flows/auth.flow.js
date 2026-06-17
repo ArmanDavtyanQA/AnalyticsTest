@@ -5,6 +5,7 @@ export const ROUTES = {
     dashboard: '/dashboard/applications-list',
     transactions: '/dashboard/transactions-reports',
     reports: '/dashboard/transactions-reports-builder',
+    reportsArchive: '/dashboard/transactions-reports-builder-archive',
     otp: '/otp-verification-required',
 };
 

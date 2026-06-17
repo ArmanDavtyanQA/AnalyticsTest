@@ -26,7 +26,7 @@ export async function goToDashboard(page) {
  *
  * @param {import('@playwright/test').Page} page
  */
-async function collapseSidebar(page) {
+export async function collapseSidebar(page) {
     await page.mouse.move(0, 0);
     await page.evaluate(() => {
         document.querySelectorAll('.side-navigation.side-navigation--opened').forEach((el) => {
@@ -59,7 +59,10 @@ export async function goToTransactions(page) {
  * @param {import('@playwright/test').Page} page
  */
 export async function goToReports(page) {
-    if (page.url().includes(ROUTES.reports)) {
+    // Note: the archive URL contains the reports URL as a substring, so exclude it
+    // explicitly - otherwise we'd short-circuit while sitting on the archive page.
+    if (page.url().includes(ROUTES.reports) && !page.url().includes(ROUTES.reportsArchive)) {
+        await collapseSidebar(page);
         await waitForGridToLoad(page, 90000, { allowEmpty: true });
         await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
         return;
@@ -67,8 +70,24 @@ export async function goToReports(page) {
     await goToDashboard(page);
     const sidebar = new Sidebar(page);
     await sidebar.navigate('Հաշվետվություններ');
-    await page.waitForURL(`**${ROUTES.reports}`);
+    // Anchor to the exact reports path — the archive URL contains this path as a
+    // substring, so a glob like `**${ROUTES.reports}` resolves immediately on archive.
+    await page.waitForURL(new RegExp(`${ROUTES.reports}$`));
     await collapseSidebar(page);
     await waitForGridToLoad(page, 90000, { allowEmpty: true });
     await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
+}
+
+/**
+ * Navigates to the Archived reports page and waits for its grid to settle.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function goToArchivedReports(page) {
+    if (!page.url().includes(ROUTES.reportsArchive)) {
+        await page.goto(ROUTES.reportsArchive, { waitUntil: 'domcontentloaded' });
+    }
+    await expect(page).toHaveURL(new RegExp(`${ROUTES.reportsArchive}$`));
+    await collapseSidebar(page);
+    await waitForGridToLoad(page, 90000, { allowEmpty: true });
 }

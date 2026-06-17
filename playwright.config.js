@@ -9,7 +9,11 @@ module.exports = defineConfig({
     fullyParallel: true,
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 2 : 1,
-    workers: process.env.CI ? 2 : 2,
+    // The shared test backend is slow: some filters require a wide date range whose
+    // GetTransactions query takes ~45s. Running these concurrently overwhelms the env
+    // and pushes navigations/queries past their timeouts. Serial execution keeps each
+    // query within budget and is far more reliable here (at the cost of suite runtime).
+    workers: 1,
 
     timeout: 180_000,
     expect: {
