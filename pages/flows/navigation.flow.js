@@ -41,14 +41,24 @@ export async function collapseSidebar(page) {
  * @param {import('@playwright/test').Page} page
  */
 export async function goToTransactions(page) {
-    if (page.url().includes(ROUTES.transactions)) {
-        await waitForGridToLoad(page, 90000, { allowEmpty: true });
-        return;
+    // reports / reportsArchive both contain the transactions path as a substring,
+    // so only treat the bare transactions route as "already here".
+    const alreadyHere =
+        page.url().includes(ROUTES.transactions) && !page.url().includes(ROUTES.reports);
+    if (!alreadyHere) {
+        // Direct deep-link is far cheaper than the dashboard -> sidebar hop (one fewer
+        // full page load per test). Fall back to sidebar nav only if auth lapsed and
+        // we got bounced off the page.
+        await page.goto(ROUTES.transactions, { waitUntil: 'domcontentloaded' });
+        const landed =
+            page.url().includes(ROUTES.transactions) && !page.url().includes(ROUTES.reports);
+        if (!landed) {
+            await goToDashboard(page);
+            const sidebar = new Sidebar(page);
+            await sidebar.navigate('Գործարքներ');
+            await page.waitForURL(`**${ROUTES.transactions}`);
+        }
     }
-    await goToDashboard(page);
-    const sidebar = new Sidebar(page);
-    await sidebar.navigate('Գործարքներ');
-    await page.waitForURL(`**${ROUTES.transactions}`);
     await collapseSidebar(page);
     await waitForGridToLoad(page, 90000, { allowEmpty: true });
 }
@@ -59,20 +69,24 @@ export async function goToTransactions(page) {
  * @param {import('@playwright/test').Page} page
  */
 export async function goToReports(page) {
-    // Note: the archive URL contains the reports URL as a substring, so exclude it
-    // explicitly - otherwise we'd short-circuit while sitting on the archive page.
-    if (page.url().includes(ROUTES.reports) && !page.url().includes(ROUTES.reportsArchive)) {
-        await collapseSidebar(page);
-        await waitForGridToLoad(page, 90000, { allowEmpty: true });
-        await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
-        return;
+    // The archive URL contains the reports URL as a substring, so exclude it
+    // explicitly - otherwise we'd treat the archive page as "already on reports".
+    const alreadyHere =
+        page.url().includes(ROUTES.reports) && !page.url().includes(ROUTES.reportsArchive);
+    if (!alreadyHere) {
+        // Direct deep-link instead of the dashboard -> sidebar hop. Fall back to
+        // sidebar nav only if auth lapsed and the direct load bounced us elsewhere.
+        await page.goto(ROUTES.reports, { waitUntil: 'domcontentloaded' });
+        const landed =
+            page.url().includes(ROUTES.reports) && !page.url().includes(ROUTES.reportsArchive);
+        if (!landed) {
+            await goToDashboard(page);
+            const sidebar = new Sidebar(page);
+            await sidebar.navigate('Հաշվետվություններ');
+            // Anchor to the exact reports path — the archive URL contains it as a substring.
+            await page.waitForURL(new RegExp(`${ROUTES.reports}$`));
+        }
     }
-    await goToDashboard(page);
-    const sidebar = new Sidebar(page);
-    await sidebar.navigate('Հաշվետվություններ');
-    // Anchor to the exact reports path — the archive URL contains this path as a
-    // substring, so a glob like `**${ROUTES.reports}` resolves immediately on archive.
-    await page.waitForURL(new RegExp(`${ROUTES.reports}$`));
     await collapseSidebar(page);
     await waitForGridToLoad(page, 90000, { allowEmpty: true });
     await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();

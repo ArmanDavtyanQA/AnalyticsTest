@@ -127,6 +127,25 @@ export const waitForGridToLoad = async (page, timeout = 90000, { allowEmpty = fa
     return gridState;
 };
 
+/**
+ * Submits the visible filter popup and waits for the transactions grid reload.
+ * Register the GraphQL waiter before clicking so we don't read stale skeleton rows.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {number} [timeout]
+ */
+export const submitVisibleFilterPopup = async (page, timeout = 90_000) => {
+    const submitButton = page
+        .locator('.filter-popup:visible .filter-popup__footer button[type="submit"]')
+        .first();
+    await expect(submitButton).toBeEnabled();
+    const gridResponse = waitForGridResponse(page, timeout);
+    await submitButton.click();
+    await expect(page.locator('.filter-popup:visible')).toBeHidden({ timeout: 10_000 }).catch(() => { });
+    await gridResponse;
+    return waitForGridToLoad(page, timeout);
+};
+
 export const takeScreenshot = async (page, name) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `test-results/${name}-${timestamp}.png`;

@@ -7,6 +7,7 @@ import {
     selectFilterByLabel,
     parseDate,
     waitForGridToLoad,
+    submitVisibleFilterPopup,
 } from '../helpers.js';
 import { filterDropdown } from '../utils/filters/filterDropdown.js';
 import { goToTransactions } from '../pages/flows/navigation.flow.js';
@@ -159,7 +160,7 @@ test.describe('Filters', () => {
 
         const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
         await expect(submitButton).toBeEnabled();
-        await submitButton.click();
+        await submitVisibleFilterPopup(page);
 
         const tableCardNumberTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(4) p');
         await expect(tableCardNumberTD).toBeVisible();
@@ -173,7 +174,7 @@ test.describe('Filters', () => {
 
         const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
         await expect(submitButton).toBeEnabled();
-        await submitButton.click();
+        await submitVisibleFilterPopup(page);
 
         const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
         await expect(tableAmountTD).toBeVisible();
@@ -195,7 +196,7 @@ test.describe('Filters', () => {
 
         const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
         await expect(submitButton).toBeEnabled();
-        await submitButton.click();
+        await submitVisibleFilterPopup(page);
 
         const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
         await expect(tableAmountTD).toBeVisible();

@@ -60,10 +60,10 @@ export class ReportsGrid {
         return this;
     }
 
-    /** Locator for the row whose name cell contains `name` (use unique names). */
+    /** Locator for the row whose name cell text exactly matches `name`. */
     rowByName(name) {
         return this.rows.filter({
-            has: this.page.locator(`${NAME_CELL} p, ${NAME_CELL}`).filter({ hasText: name }),
+            has: this.page.locator(`${NAME_CELL} p`).getByText(name, { exact: true }),
         });
     }
 
@@ -93,6 +93,27 @@ export class ReportsGrid {
         }).catch(() => { });
     }
 
+    /**
+     * Scrolls a row's sticky actions cell into the clickable viewport. The actions
+     * column is pinned to the right; without horizontal scroll the toggle / menu
+     * clicks often miss or hit an overlapping element.
+     */
+    async prepareRowActions(row) {
+        await this.ensureActionsReachable();
+        const actions = row.locator(ACTIONS_CELL);
+        await actions.scrollIntoViewIfNeeded();
+        await actions.evaluate((cell) => {
+            cell.scrollIntoView({ block: 'nearest', inline: 'end' });
+            const wrapper =
+                cell.closest('.reports-table')?.parentElement
+                ?? cell.closest('.transactions-wrapper__listing')
+                ?? cell.closest('main');
+            if (wrapper && wrapper.scrollWidth > wrapper.clientWidth) {
+                wrapper.scrollLeft = wrapper.scrollWidth;
+            }
+        });
+    }
+
     /** Asserts the report is present and returns its row locator. */
     async expectInGrid(name, { timeout = 30_000 } = {}) {
         const row = this.rowByName(name).first();
@@ -117,6 +138,29 @@ export class ReportsGrid {
         }
     }
 
+    /**
+     * Waits for a row to disappear, reloading between checks. Mutations (archive /
+     * delete) can commit slightly after the confirmation modal closes, so a single
+     * reload may still show the old row.
+     */
+    async waitUntilNotInGrid(name, { reloads = 5 } = {}) {
+        for (let attempt = 0; attempt < reloads; attempt++) {
+            const absent = await this.rowByName(name)
+                .count()
+                .then((count) => count === 0)
+                .catch(() => false);
+            if (absent) {
+                log(`PASS: report "${name}" is absent from the grid`);
+                return;
+            }
+            if (attempt < reloads - 1) {
+                log(`"${name}" still in grid — reloading (${attempt + 2}/${reloads})`);
+                await this.reload();
+            }
+        }
+        await this.expectNotInGrid(name);
+    }
+
     /** Checkbox locator backing a row's active/inactive toggle. */
     toggleCheckbox(name) {
         return this.rowByName(name).first().locator(`${ACTIONS_CELL} .switcher input[type="checkbox"]`);
@@ -128,16 +172,43 @@ export class ReportsGrid {
     }
 
     /** Asserts the toggle state of a report and logs the result. */
-    async expectToggleState(name, active) {
+    async expectToggleState(name, active, { timeout = 30_000 } = {}) {
         const checkbox = this.toggleCheckbox(name);
         try {
-            if (active) await expect(checkbox).toBeChecked();
-            else await expect(checkbox).not.toBeChecked();
+            if (active) await expect(checkbox).toBeChecked({ timeout });
+            else await expect(checkbox).not.toBeChecked({ timeout });
             log(`PASS: "${name}" toggle is ${active ? 'ACTIVE' : 'INACTIVE'}`);
         } catch (e) {
             log(`FAIL: "${name}" toggle is NOT ${active ? 'ACTIVE' : 'INACTIVE'}`);
             throw e;
         }
+    }
+
+    /**
+     * Waits for a toggle to reach the expected state, reloading between checks.
+     * The reports grid does not auto-refresh and the activate/deactivate mutation
+     * can commit slightly after its confirmation modal closes, so a single reload
+     * may capture a stale (pre-commit) snapshot. Re-reading the same static page
+     * would never recover, hence the reload-and-recheck loop.
+     */
+    async waitForToggleState(name, active, { reloads = 3, perCheckTimeout = 5_000 } = {}) {
+        for (let attempt = 0; attempt < reloads; attempt++) {
+            const checkbox = this.toggleCheckbox(name);
+            const matched = await checkbox
+                .isChecked({ timeout: perCheckTimeout })
+                .then((checked) => checked === active)
+                .catch(() => false);
+            if (matched) {
+                log(`PASS: "${name}" toggle is ${active ? 'ACTIVE' : 'INACTIVE'}`);
+                return;
+            }
+            if (attempt < reloads - 1) {
+                log(`toggle not ${active ? 'ACTIVE' : 'INACTIVE'} yet for "${name}" — reloading (${attempt + 2}/${reloads})`);
+                await this.reload();
+            }
+        }
+        // Final strict assertion to surface a clear, logged failure.
+        await this.expectToggleState(name, active);
     }
 
     // --- confirmation modal ----------------------------------------------------
@@ -158,7 +229,14 @@ export class ReportsGrid {
 
     async clickToggle(name) {
         const row = await this.expectInGrid(name);
-        await row.locator(`${ACTIONS_CELL} .switcher .controller--switch`).click();
+        await this.prepareRowActions(row);
+        const toggle = row.locator(
+            `${ACTIONS_CELL} label.controller--switch, ${ACTIONS_CELL} .controller--switch`,
+        ).first();
+        await expect(toggle).toBeVisible();
+        // Center click is more reliable on the pinned actions cell than a default
+        // click, which can land on an overlapping sticky element.
+        await this.clickLocatorCenter(toggle);
     }
 
     /** Activates a (currently inactive) report and confirms. */
@@ -166,6 +244,8 @@ export class ReportsGrid {
         log(`activating "${name}" ...`);
         await this.clickToggle(name);
         await this.confirmWith(TEXT.confirmActivate);
+        await this.reload();
+        await this.waitForToggleState(name, true);
         log(`activate confirmed for "${name}"`);
         return this;
     }
@@ -175,6 +255,8 @@ export class ReportsGrid {
         log(`deactivating "${name}" ...`);
         await this.clickToggle(name);
         await this.confirmWith(TEXT.confirmDeactivate);
+        await this.reload();
+        await this.waitForToggleState(name, false);
         log(`deactivate confirmed for "${name}"`);
         return this;
     }
@@ -184,6 +266,7 @@ export class ReportsGrid {
     /** Opens the history side-sheet for a report (the non-menu action button). */
     async openHistory(name) {
         const row = await this.expectInGrid(name);
+        await this.prepareRowActions(row);
         log(`opening history for "${name}" ...`);
         await row.locator(`${ACTIONS_CELL} button.btn--icon:not([data-id="more-icon-btn"])`).click();
         const sideSheet = this.page.locator('.side-sheet__container');
@@ -211,33 +294,65 @@ export class ReportsGrid {
 
     // --- 3-dot menu ------------------------------------------------------------
 
-    /** Opens a row's 3-dot menu and returns the dropdown locator. */
+    /** Clicks the center of a locator — reliable for sticky / overlapped controls. */
+    async clickLocatorCenter(locator) {
+        await locator.hover().catch(() => { });
+        const box = await locator.boundingBox();
+        if (box) {
+            await this.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+            return;
+        }
+        await locator.click();
+    }
+
+    /**
+     * Locator for the currently open row-action menu container. Both grids render
+     * the dropdown in a portal (outside the row) as `.select__options` (older
+     * builds: `.menu-dropdown`). We scope to the single visible/last container so
+     * options are read from the menu we just opened — a page-wide `.select__option`
+     * selector could leak options from a stale dropdown elsewhere in the DOM.
+     *   - Active grid:  Duplicate (Կրկնօրինակել), Archive (Արխիվացնել)
+     *   - Archived grid: Unarchive (հանել արխիվից), Delete (Ջնջել)
+     */
+    menuContainer() {
+        return this.page.locator('.select__options, .menu-dropdown').filter({ visible: true }).last();
+    }
+
+    /** Opens a row's 3-dot menu and returns the scoped menu container locator. */
     async openRowMenu(name) {
-        await this.ensureActionsReachable();
         const row = await this.expectInGrid(name);
+        await this.prepareRowActions(row);
         const moreBtn = row.locator(`${ACTIONS_CELL} button[data-id="more-icon-btn"]`);
-        await moreBtn.scrollIntoViewIfNeeded();
         await expect(moreBtn).toBeVisible();
 
-        // Dismiss any menu left open from a prior row.
-        await this.page.keyboard.press('Escape').catch(() => { });
-
-        await moreBtn.click();
-        const menu = this.page.locator('.menu-dropdown').filter({ visible: true }).last();
-        try {
-            await expect(menu).toBeVisible({ timeout: 5_000 });
-        } catch {
-            // Sticky actions or sidebar overlap can swallow the first click — retry once.
-            await moreBtn.click();
-            await expect(menu).toBeVisible({ timeout: 15_000 });
+        // Scope options to the single open container (matching the wrapper + its
+        // children together would trip strict mode).
+        const menu = this.menuContainer();
+        for (let attempt = 0; attempt < 3; attempt++) {
+            if (attempt > 0) {
+                await this.page.keyboard.press('Escape').catch(() => { });
+                await this.prepareRowActions(row);
+            }
+            await this.clickLocatorCenter(moreBtn);
+            try {
+                await expect(menu.locator('.select__option').first()).toBeVisible({ timeout: 8_000 });
+                return menu;
+            } catch (e) {
+                if (attempt === 2) {
+                    throw e;
+                }
+                log(`menu did not open for "${name}" — retrying (${attempt + 2}/3)`);
+            }
         }
         return menu;
     }
 
-    /** Opens the row menu and clicks one of its options by text. */
+    /** Opens the row menu and clicks one of its options by exact text. */
     async runMenuAction(name, optionText) {
         const menu = await this.openRowMenu(name);
-        await menu.locator('.select__option').filter({ hasText: optionText }).click();
+        const option = menu.locator('.select__option').filter({ hasText: optionText }).first();
+        await expect(option).toBeVisible();
+        await this.clickLocatorCenter(option);
     }
 
     // --- duplicate -------------------------------------------------------------
@@ -290,6 +405,8 @@ export class ReportsGrid {
         log(`archiving "${name}" ...`);
         await this.runMenuAction(name, TEXT.archive);
         await this.confirmWith(TEXT.confirmArchive);
+        await this.reload();
+        await this.waitUntilNotInGrid(name);
         log(`archive confirmed for "${name}"`);
         return this;
     }
@@ -322,6 +439,8 @@ export class ReportsGrid {
         log(`deleting "${name}" ...`);
         await this.runMenuAction(name, TEXT.delete);
         await this.confirmFooterAction();
+        await this.reload();
+        await this.waitUntilNotInGrid(name);
         log(`delete confirmed for "${name}"`);
         return this;
     }

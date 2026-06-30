@@ -1,14 +1,12 @@
 /**
  * Manual cleanup for leftover automation reports.
  *
- * Two separate tests — run individually or together in order:
- *   1. Archive every "Autom" report still on the active grid
- *   2. Go to the archived grid and permanently delete every "Autom" report there
+ * Finds every report whose title (name column) contains "Autom" on the active
+ * grid, archives them, then permanently deletes all matching reports from the
+ * archived grid (including ones that were already archived before this run).
  *
  * Run on demand:
  *   npx playwright test tests/smeAnalytics/Reports-cleanup.spec.js
- *   npx playwright test tests/smeAnalytics/Reports-cleanup.spec.js -g "archive"
- *   npx playwright test tests/smeAnalytics/Reports-cleanup.spec.js -g "delete"
  *
  * Skipped in CI — trigger locally when you want to tidy the shared test environment.
  */
@@ -16,87 +14,101 @@ import { test, expect } from '../../fixtures/index.js';
 import { goToReports, goToArchivedReports } from '../../pages/flows/navigation.flow.js';
 import { ReportsGrid } from '../../pages/components/reportsGrid.component.js';
 
-const AUTOM_NAME_MATCH = 'Autom';
+/** Substring matched against the report title shown in the grid name column. */
+const AUTOM_TITLE_MATCH = 'Autom';
 
 function log(msg) {
     console.log(`[Reports-cleanup] ${msg}`);
 }
 
-/** Grid may not drop a row until reload — retry once before failing. */
-async function waitUntilAbsent(grid, name) {
-    try {
-        await grid.expectNotInGrid(name, { timeout: 15_000 });
-    } catch {
-        log(`row still visible — reloading once for "${name}"`);
-        await grid.reload();
-        await grid.expectNotInGrid(name);
+/**
+ * Archives every report on the active grid whose title contains `substring`.
+ * @returns {number} how many reports were archived
+ */
+async function archiveAllOnActiveGrid(page, substring) {
+    await goToReports(page);
+    const grid = new ReportsGrid(page);
+    await grid.reload();
+
+    let archivedCount = 0;
+    let names = await grid.collectNamesContaining(substring);
+    while (names.length > 0) {
+        // Longest titles first — exact row matching, but this avoids acting on a
+        // parent title before its duplicate when names share a prefix.
+        names.sort((a, b) => b.length - a.length);
+        const title = names[0];
+        archivedCount++;
+        log(`archiving ${archivedCount} on active grid: "${title}"`);
+        await grid.archive(title);
+        names = await grid.collectNamesContaining(substring);
     }
+    return archivedCount;
+}
+
+/**
+ * Permanently deletes every report on the archived grid whose title contains `substring`.
+ * @returns {number} how many reports were deleted
+ */
+async function deleteAllOnArchivedGrid(page, substring) {
+    await goToArchivedReports(page);
+    const grid = new ReportsGrid(page);
+    await grid.reload();
+
+    let deletedCount = 0;
+    let names = await grid.collectNamesContaining(substring);
+    while (names.length > 0) {
+        names.sort((a, b) => b.length - a.length);
+        const title = names[0];
+        deletedCount++;
+        log(`deleting ${deletedCount} on archived grid: "${title}"`);
+        await grid.deleteReport(title);
+        names = await grid.collectNamesContaining(substring);
+    }
+    return deletedCount;
+}
+
+/** Asserts no report title on either grid still contains `substring`. */
+async function expectNoAutomReportsOnEitherGrid(page, substring) {
+    await goToReports(page);
+    const activeGrid = new ReportsGrid(page);
+    await activeGrid.reload();
+    const onActive = await activeGrid.collectNamesContaining(substring);
+    expect(onActive, `titles still on active grid: ${onActive.join(', ')}`).toHaveLength(0);
+
+    await goToArchivedReports(page);
+    const archivedGrid = new ReportsGrid(page);
+    await archivedGrid.reload();
+    const onArchived = await archivedGrid.collectNamesContaining(substring);
+    expect(onArchived, `titles still on archived grid: ${onArchived.join(', ')}`).toHaveLength(0);
 }
 
 test.describe('Reports - cleanup (manual)', () => {
-    test.describe.configure({ mode: 'serial' });
-
     test.beforeEach(() => {
         test.skip(!!process.env.CI, 'manual cleanup — run locally with: npx playwright test Reports-cleanup');
         test.setTimeout(600_000);
     });
 
-    test('archive existing Autom reports on active grid', async ({ page }) => {
-        log(`detecting active reports containing "${AUTOM_NAME_MATCH}"`);
+    test('remove all reports whose title contains "Autom" (active + archived)', async ({ page }) => {
+        log(`cleaning reports whose title contains "${AUTOM_TITLE_MATCH}"`);
 
-        await goToReports(page);
-        const grid = new ReportsGrid(page);
-
-        let names = await grid.collectNamesContaining(AUTOM_NAME_MATCH);
-        if (names.length === 0) {
-            log('no matching reports on the active grid — nothing to archive');
-            return;
+        const archivedCount = await archiveAllOnActiveGrid(page, AUTOM_TITLE_MATCH);
+        if (archivedCount === 0) {
+            log('no matching titles on the active grid');
+        } else {
+            log(`archived ${archivedCount} report(s) from the active grid`);
         }
 
-        log(`found ${names.length} on active grid — archiving one by one`);
-        let archivedCount = 0;
-        while (names.length > 0) {
-            const name = names[0];
-            archivedCount++;
-            log(`archiving ${archivedCount}: "${name}"`);
-            await grid.archive(name);
-            await waitUntilAbsent(grid, name);
-            names = await grid.collectNamesContaining(AUTOM_NAME_MATCH);
+        const deletedCount = await deleteAllOnArchivedGrid(page, AUTOM_TITLE_MATCH);
+        if (deletedCount === 0) {
+            log('no matching titles on the archived grid');
+        } else {
+            log(`deleted ${deletedCount} report(s) from the archived grid`);
         }
 
-        await grid.reload();
-        const remaining = await grid.collectNamesContaining(AUTOM_NAME_MATCH);
-        expect(remaining, 'Autom reports still on active grid').toHaveLength(0);
-        log(`archived ${archivedCount} report(s) from the active grid`);
-    });
-
-    test('delete existing Autom reports on archived grid', async ({ page }) => {
-        log(`navigating to archived grid to delete reports containing "${AUTOM_NAME_MATCH}"`);
-
-        await goToArchivedReports(page);
-        const grid = new ReportsGrid(page);
-        await grid.reload();
-
-        let names = await grid.collectNamesContaining(AUTOM_NAME_MATCH);
-        if (names.length === 0) {
-            log('no matching reports on the archived grid — nothing to delete');
-            return;
-        }
-
-        log(`found ${names.length} on archived grid — deleting one by one`);
-        let deletedCount = 0;
-        while (names.length > 0) {
-            const name = names[0];
-            deletedCount++;
-            log(`deleting ${deletedCount}: "${name}"`);
-            await grid.deleteReport(name);
-            await waitUntilAbsent(grid, name);
-            names = await grid.collectNamesContaining(AUTOM_NAME_MATCH);
-        }
-
-        await grid.reload();
-        const remaining = await grid.collectNamesContaining(AUTOM_NAME_MATCH);
-        expect(remaining, 'Autom reports still on archived grid').toHaveLength(0);
-        log(`deleted ${deletedCount} report(s) from the archived grid`);
+        await expectNoAutomReportsOnEitherGrid(page, AUTOM_TITLE_MATCH);
+        log(
+            `cleanup complete — archived ${archivedCount}, deleted ${deletedCount}; `
+            + `no "${AUTOM_TITLE_MATCH}" titles remain on either grid`,
+        );
     });
 });
