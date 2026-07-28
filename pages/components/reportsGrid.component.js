@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { waitForGridToLoad } from '../../helpers.js';
+import { waitForReportsGridToLoad } from '../../helpers.js';
 
 /**
  * Localized UI copy used by the reports grid row actions.
@@ -52,11 +52,11 @@ export class ReportsGrid {
         this.rows = page.locator(ROW);
     }
 
-    /** Reloads the page and waits for the grid to settle (the grid does not auto-refresh). */
-    async reload() {
+    /** Reloads the page and waits for the reports grid to settle. */
+    async reload({ gridTimeout = 60_000 } = {}) {
         log('reloading grid');
         await this.page.reload({ waitUntil: 'domcontentloaded' });
-        await waitForGridToLoad(this.page, 90000, { allowEmpty: true });
+        await waitForReportsGridToLoad(this.page, gridTimeout);
         return this;
     }
 
@@ -69,9 +69,11 @@ export class ReportsGrid {
 
     /**
      * Returns report names visible in the current grid whose text contains `substring`.
+     * Scrolls the grid first so virtualized / paginated rows are included.
      * Reloads are the caller's responsibility when iterating after mutations.
      */
     async collectNamesContaining(substring) {
+        await this.ensureAllRowsVisible();
         const nameLocator = this.page.locator(`${ROW} ${NAME_CELL} p, ${ROW} ${NAME_CELL}`);
         const texts = await nameLocator.allInnerTexts();
         const names = [...new Set(
@@ -81,6 +83,31 @@ export class ReportsGrid {
         )];
         log(`found ${names.length} report(s) matching "${substring}": ${names.length ? names.join(', ') : '(none)'}`);
         return names;
+    }
+
+    /** Scrolls the reports table until the row count stabilizes (pagination / virtual scroll). */
+    async ensureAllRowsVisible() {
+        let previousCount = 0;
+        for (let attempt = 0; attempt < 12; attempt++) {
+            const count = await this.rows.count();
+            if (count === previousCount && attempt > 0) {
+                return;
+            }
+            previousCount = count;
+            const lastRow = this.rows.last();
+            if (count > 0) {
+                await lastRow.scrollIntoViewIfNeeded().catch(() => { });
+            }
+            await this.page.locator('.reports-table').first().evaluate((table) => {
+                const wrapper =
+                    table.closest('.transactions-wrapper__listing')
+                    ?? table.parentElement?.parentElement
+                    ?? table.parentElement;
+                if (wrapper && wrapper.scrollHeight > wrapper.clientHeight) {
+                    wrapper.scrollTop = wrapper.scrollHeight;
+                }
+            }).catch(() => { });
+        }
     }
 
     /** Collapse an opened sidebar so sticky row actions are not covered. */
@@ -112,6 +139,11 @@ export class ReportsGrid {
                 wrapper.scrollLeft = wrapper.scrollWidth;
             }
         });
+    }
+
+    /** Returns whether a report row with an exact title match is visible (non-throwing). */
+    async hasReport(name, { timeout = 5_000 } = {}) {
+        return this.rowByName(name).first().isVisible({ timeout }).catch(() => false);
     }
 
     /** Asserts the report is present and returns its row locator. */
@@ -155,7 +187,8 @@ export class ReportsGrid {
             }
             if (attempt < reloads - 1) {
                 log(`"${name}" still in grid — reloading (${attempt + 2}/${reloads})`);
-                await this.reload();
+                // Shorter wait on recheck reloads — grid was already loaded once this action.
+                await this.reload({ gridTimeout: 30_000 });
             }
         }
         await this.expectNotInGrid(name);

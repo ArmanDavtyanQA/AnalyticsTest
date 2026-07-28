@@ -10,6 +10,7 @@
         "test:ui": "playwright test --ui",
         "test:report": "playwright show-report",
         "test:chrome": "playwright test --project=chromium",
+        "test:reports": "playwright test tests/smeAnalytics/Reports.spec.js tests/smeAnalytics/Reports-actions.spec.js tests/smeAnalytics/Reports.z-cleanup.spec.js --grep @reports",
         "test:firefox": "playwright test --project=firefox",
         "test:webkit": "playwright test --project=webkit"
     },

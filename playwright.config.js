@@ -6,7 +6,7 @@ const RUN_ALL_BROWSERS = !!process.env.ALL_BROWSERS;
 
 module.exports = defineConfig({
     testDir: './tests',
-    fullyParallel: true,
+    fullyParallel: false,
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 2 : 1,
     // The shared test backend is slow: some filters require a wide date range whose

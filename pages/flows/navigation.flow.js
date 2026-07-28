@@ -1,6 +1,6 @@
 import { expect } from '@playwright/test';
 import { Sidebar } from '../components/sidebar.component.js';
-import { waitForGridToLoad } from '../../helpers.js';
+import { waitForGridToLoad, waitForReportsGridToLoad } from '../../helpers.js';
 import { ROUTES } from './auth.flow.js';
 
 /**
@@ -88,7 +88,7 @@ export async function goToReports(page) {
         }
     }
     await collapseSidebar(page);
-    await waitForGridToLoad(page, 90000, { allowEmpty: true });
+    await waitForReportsGridToLoad(page);
     await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
 }
 
@@ -103,5 +103,5 @@ export async function goToArchivedReports(page) {
     }
     await expect(page).toHaveURL(new RegExp(`${ROUTES.reportsArchive}$`));
     await collapseSidebar(page);
-    await waitForGridToLoad(page, 90000, { allowEmpty: true });
+    await waitForReportsGridToLoad(page);
 }

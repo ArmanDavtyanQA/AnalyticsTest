@@ -127,6 +127,40 @@ export const waitForGridToLoad = async (page, timeout = 90000, { allowEmpty = fa
     return gridState;
 };
 
+const REPORTS_TABLE_BODY = '.reports-table table tbody';
+
+/**
+ * Waits for the reports grid (active or archived) to finish loading.
+ * Do not use {@link waitForGridToLoad} on reports pages — that helper targets the
+ * transactions grid and can poll the wrong table / wait on GetTransactions semantics.
+ *
+ * @param {import('@playwright/test').Page} page
+ * @param {number} [timeout]
+ */
+export const waitForReportsGridToLoad = async (page, timeout = 60_000) => {
+    const tableBody = page.locator(REPORTS_TABLE_BODY);
+    await expect
+        .poll(
+            async () => {
+                if (!(await tableBody.isVisible().catch(() => false))) {
+                    return 'loading';
+                }
+                const visibleSkeletons = await tableBody
+                    .locator('.react-loading-skeleton:visible')
+                    .count()
+                    .catch(() => 1);
+                return visibleSkeletons === 0 ? 'ready' : 'loading';
+            },
+            {
+                timeout,
+                message:
+                    `Reports grid still showing loading skeletons after ${timeout}ms. ` +
+                    'The reports list has not finished loading — the backend may be under heavy load.',
+            },
+        )
+        .not.toBe('loading');
+};
+
 /**
  * Submits the visible filter popup and waits for the transactions grid reload.
  * Register the GraphQL waiter before clicking so we don't read stale skeleton rows.

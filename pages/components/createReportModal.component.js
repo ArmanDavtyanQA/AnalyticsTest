@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { waitForGridToLoad } from '../../helpers.js';
+import { waitForReportsGridToLoad } from '../../helpers.js';
 
 /**
  * Localized UI copy used by the "Create report" wizard.
@@ -252,7 +252,7 @@ export async function expectReportInGrid(page, name, { reload = true, timeout = 
     if (reload) {
         await page.reload({ waitUntil: 'domcontentloaded' });
     }
-    await waitForGridToLoad(page);
+    await waitForReportsGridToLoad(page);
     const row = page.locator(REPORT_GRID_ROW_SELECTOR).filter({ hasText: name });
     await expect(row.first()).toBeVisible({ timeout });
     return row.first();

@@ -10,7 +10,7 @@ import {
     expectReportInGrid,
 } from '../../pages/components/createReportModal.component.js';
 
-test.describe('Reports', () => {
+test.describe('Reports', { tag: '@reports' }, () => {
     test.beforeEach(async ({ page }) => {
         await goToReports(page);
         await resetFilters(page);
