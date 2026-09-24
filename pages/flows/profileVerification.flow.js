@@ -18,24 +18,24 @@ function otpModal(page) {
     });
 }
 
-export function profileUnlockGate(page) {
+function profileUnlockGate(page) {
     const empty = page.locator('.empty-container__content, .empty-container');
     return empty.filter({ hasText: UNLOCK_COPY })
         .or(page.getByText(/Էջը տեսնելու համար անցեք նույնականացում|To unlock the page/i));
 }
 
-export function verifyProfileButton(page) {
+function verifyProfileButton(page) {
     return page.getByRole('button', { name: VERIFY_BUTTON });
 }
 
-export async function isProfileVerificationRequired(page) {
-    if (await otpModal(page).first().isVisible().catch(() => false)) {
-        return true;
-    }
-    if (await profileUnlockGate(page).first().isVisible().catch(() => false)) {
-        return true;
-    }
-    return verifyProfileButton(page).first().isVisible().catch(() => false);
+/**
+ * Anything that locks the page until the profile is verified: the verify button on the
+ * lock screen or the "Enter the code" modal. The test fixture registers it with
+ * `page.addLocatorHandler`, so {@link handleProfileVerification} runs whenever it shows up.
+ * @param {import('@playwright/test').Page} page
+ */
+export function profileVerificationGate(page) {
+    return verifyProfileButton(page).or(otpModal(page));
 }
 
 /**
@@ -43,11 +43,10 @@ export async function isProfileVerificationRequired(page) {
  * @returns {Promise<boolean>} true when the gate was present and handled
  */
 export async function handleProfileVerification(page) {
-    const modalOpen = await otpModal(page).first().isVisible().catch(() => false);
-    const gate = profileUnlockGate(page).first();
+    const modalOpen = await otpModal(page).first().isVisible();
     const button = verifyProfileButton(page).first();
-    const gateVisible = await gate.isVisible().catch(() => false);
-    const buttonVisible = await button.isVisible().catch(() => false);
+    const gateVisible = await profileUnlockGate(page).first().isVisible();
+    const buttonVisible = await button.isVisible();
 
     if (!modalOpen && !gateVisible && !buttonVisible) {
         return false;
@@ -65,7 +64,7 @@ export async function handleProfileVerification(page) {
 
     const filledOtp = await fillOtp(page, { timeout: 20_000 });
     if (filledOtp) {
-        log('Entered verification code 123456 and clicked Continue.');
+        log('Entered the verification code and clicked Continue.');
     } else {
         log('OTP modal did not appear — waiting for the lock screen to clear.');
     }

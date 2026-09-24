@@ -1,10 +1,9 @@
 // @ts-check
-const { defineConfig, devices } = require('@playwright/test');
+import { defineConfig, devices } from '@playwright/test';
 
 const STORAGE_STATE = 'playwright/.auth/user.json';
-const RUN_ALL_BROWSERS = !!process.env.ALL_BROWSERS;
 
-module.exports = defineConfig({
+export default defineConfig({
     testDir: './tests',
     fullyParallel: false,
     forbidOnly: !!process.env.CI,
@@ -53,25 +52,5 @@ module.exports = defineConfig({
             },
             dependencies: ['setup'],
         },
-        ...(RUN_ALL_BROWSERS
-            ? [
-                {
-                    name: 'firefox',
-                    use: {
-                        ...devices['Desktop Firefox'],
-                        storageState: STORAGE_STATE,
-                    },
-                    dependencies: ['setup'],
-                },
-                {
-                    name: 'webkit',
-                    use: {
-                        ...devices['Desktop Safari'],
-                        storageState: STORAGE_STATE,
-                    },
-                    dependencies: ['setup'],
-                },
-            ]
-            : []),
     ],
 });

@@ -54,12 +54,20 @@ export async function fillOtp(page, { timeout = 15_000 } = {}) {
         .locator('[data-id="enter-verification-code-continue-button"]')
         .or(page.getByRole('button', { name: /^(Continue|Շարունակել)$/i }))
         .first();
+    if (modalVisible) {
+        // The modal can submit by itself once the last digit is in: Continue turns
+        // `pointer-events-none` and disappears with the modal, so a click may never land.
+        await expect(async () => {
+            if (await codeModal.isVisible()) {
+                await continueButton.click({ timeout: 2_000 });
+            }
+            await expect(codeModal).toBeHidden({ timeout: 5_000 });
+        }).toPass({ timeout: 30_000 });
+        return true;
+    }
     await expect(continueButton).toBeVisible({ timeout: 10_000 });
     await expect(continueButton).toBeEnabled();
     await continueButton.click();
-    if (modalVisible) {
-        await expect(codeModal).toBeHidden({ timeout: 20_000 });
-    }
     return true;
 }
 
@@ -78,6 +86,13 @@ const PASSWORD_SELECTOR = [
     'input[placeholder*="գաղտնաբառ"]',
     'input[placeholder*="password" i]',
 ].join(', ');
+
+/**
+ * Password field of the sign-in form. The app redirects here, before rendering any
+ * page content, when the Keycloak session behind the saved storageState is gone.
+ * @param {import('@playwright/test').Page} page
+ */
+export const signInPasswordInput = (page) => page.locator(PASSWORD_SELECTOR).first();
 
 async function getFirstVisible(page, selector) {
     const candidates = page.locator(selector);
@@ -130,26 +145,32 @@ export async function login(page) {
 
     const email = await getFirstVisible(page, EMAIL_SELECTOR);
     if (!email) throw new Error('Email input not visible after waiting for login form.');
-    await email.fill(TEST_USER.email);
-
     const password = await getFirstVisible(page, PASSWORD_SELECTOR);
     if (!password) throw new Error('Password input not visible after waiting for login form.');
-    await password.fill(TEST_USER.password);
-
     const submit = page
         .getByRole('button', { name: /(մուտք գործել|մուտք|sign in|login)/i })
         .or(page.getByTestId('login-button'))
         .first();
-    await expect(submit).toBeVisible();
-    await submit.click();
+    const submitForm = async () => {
+        await email.fill(TEST_USER.email);
+        await password.fill(TEST_USER.password);
+        await expect(submit).toBeVisible();
+        await submit.click();
+    };
+    const leftSignIn = (url) => {
+        const u = url.toString();
+        return u.includes(ROUTES.dashboard) || u.includes(ROUTES.otp);
+    };
 
-    await page.waitForURL(
-        url => {
-            const u = url.toString();
-            return u.includes(ROUTES.dashboard) || u.includes(ROUTES.otp);
-        },
-        { timeout: 60_000 }
-    );
+    await submitForm();
+    const signedIn = await page.waitForURL(leftSignIn, { timeout: 10_000 }).then(() => true, () => false);
+    if (!signedIn && (await email.isVisible()) && (await email.inputValue()) === '') {
+        // A slow sign-in page can re-render between filling and submitting, which clears
+        // the fields and submits an empty form.
+        console.log('[Login] The sign-in form was submitted empty; filling it in again.');
+        await submitForm();
+    }
+    await page.waitForURL(leftSignIn, { timeout: 60_000 });
 
     if (page.url().includes(ROUTES.otp)) {
         const filled = await fillOtp(page, { timeout: 20_000 });

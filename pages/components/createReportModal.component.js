@@ -1,5 +1,4 @@
 import { expect } from '@playwright/test';
-import { waitForReportsGridToLoad } from '../../helpers.js';
 
 /**
  * Localized UI copy used by the "Create report" wizard.
@@ -49,10 +48,6 @@ export const REPORT_FILTERS = {
     POS_TYPE: '4',
 };
 
-const REPORT_GRID_ROW_SELECTOR =
-    '.transactions-reports-wrapper table tbody tr, .transactions-wrapper__listing table tbody tr, '
-    + 'main table tbody tr, table tbody tr';
-
 /**
  * Page Object for the 4-step "Create report" wizard.
  *
@@ -71,6 +66,7 @@ export class CreateReportModal {
      */
     constructor(page) {
         this.page = page;
+        this.openButton = page.getByRole('button', { name: TEXT.openButton });
         this.root = page.locator('.modal__container');
         this.title = this.root.locator('.modal__title-large, .modal__title').first();
         this.stepper = this.root
@@ -83,7 +79,7 @@ export class CreateReportModal {
 
     /** Opens the wizard from the reports page and waits for step 1. */
     async open() {
-        await this.page.getByRole('button', { name: TEXT.openButton }).click();
+        await this.openButton.click();
         await expect(this.root).toBeVisible();
         await expect(this.title).toHaveText(TEXT.modalTitle);
         await this.expectStep(1);
@@ -236,24 +232,4 @@ export class CreateReportModal {
         await this.submit();
         return this;
     }
-}
-
-/**
- * Verifies a report with the given name is present in the reports grid.
- *
- * The grid does not auto-refresh after creation, so it is reloaded first (unless
- * disabled). Pair this with a unique report name to confirm the current run's report.
- *
- * @param {import('@playwright/test').Page} page
- * @param {string} name - the (ideally unique) report name to look for
- * @param {{ reload?: boolean, timeout?: number }} [options]
- */
-export async function expectReportInGrid(page, name, { reload = true, timeout = 30_000 } = {}) {
-    if (reload) {
-        await page.reload({ waitUntil: 'domcontentloaded' });
-    }
-    await waitForReportsGridToLoad(page);
-    const row = page.locator(REPORT_GRID_ROW_SELECTOR).filter({ hasText: name });
-    await expect(row.first()).toBeVisible({ timeout });
-    return row.first();
 }

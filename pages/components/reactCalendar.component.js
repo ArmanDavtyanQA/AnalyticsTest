@@ -1,24 +1,26 @@
 import { expect } from '@playwright/test';
 
 /**
- * Transactions / Analytics date picker — filter popup with a single react-calendar.
+ * Date filter popup (creation date / settlement date) with a single react-calendar.
  *
  * Markup:
  *   .filter-popup.show
- *     input[name="transactionStartDate"]          Date from  (DD-MM-YYYY)
- *     input[name="trasnactionEndDate"]            Date to    (product typo)
- *     .switcher input[type="checkbox"]            "Apply range"
+ *     input[name="transactionStartDate" | "settlementStartDate"]   Date from  (DD-MM-YYYY)
+ *     input[name="trasnactionEndDate" | "settlementEndDate"]       Date to, range mode only
+ *     .switcher input[type="checkbox"]            "Apply range" (checked = range mode)
  *     .react-calendar                             month tiles
  *     .filter-popup__footer button[type="submit"] Apply
+ *
+ * The date inputs are masked: `fill()` leaves the old value in place, so dates are typed.
  */
 
-const POPUP = '.filter-popup.show, .filter-popup.filter-popup--medium.show, .filter-popup:visible';
-const START_NAME = 'transactionStartDate';
-const END_NAMES = 'input[name="trasnactionEndDate"], input[name="transactionEndDate"]';
-const APPLY_RANGE_LABEL = /Apply range|Կիրառել միջակայքը/i;
+const POPUP = '.filter-popup.show';
+const START_INPUTS = 'input[name="transactionStartDate"], input[name="settlementStartDate"]';
+const END_INPUTS =
+    'input[name="trasnactionEndDate"], input[name="transactionEndDate"], input[name="settlementEndDate"]';
 const APPLY_BUTTON = /^(Apply|Կիրառել)$/;
 
-/** Normalize testData / UI values to the input format (`DD-MM-YYYY`). */
+/** Normalizes a `DD-MM-YYYY` / `DD/MM/YYYY` value to the input format (`DD-MM-YYYY`). */
 export const toCalendarInputDate = (value) => {
     if (value == null || value === '') return '';
     return String(value).trim().replace(/\//g, '-');
@@ -51,22 +53,15 @@ export const toCalendarAriaLabel = (value) => {
     });
 };
 
-/**
- * @param {import('@playwright/test').Page} page
- * @param {import('@playwright/test').Locator} [root]
- */
-export class ReactCalendar {
-    constructor(page, root) {
-        this.page = page;
-        this.root = root
-            ?? page.locator(POPUP).filter({
-                has: page.locator(`input[name="${START_NAME}"]`),
-            }).first();
-    }
+const monthIndex = ({ month, year }) => year * 12 + month;
 
-    /** Bind to an already-open date filter popup. */
-    static inPopup(page, popup) {
-        return new ReactCalendar(page, popup);
+export class ReactCalendar {
+    /**
+     * @param {import('@playwright/test').Page} page
+     */
+    constructor(page) {
+        this.page = page;
+        this.root = page.locator(POPUP).filter({ has: page.locator(START_INPUTS) }).first();
     }
 
     /**
@@ -75,52 +70,40 @@ export class ReactCalendar {
      * @param {string} filterId e.g. `creationDate`, `settlementDate`
      */
     static async openFromChip(page, filterId) {
-        const chip = page.locator(`.filter-chip[data-filter-id="${filterId}"]`);
-        await expect(chip).toBeVisible({ timeout: 15_000 });
-        await chip.click();
+        await page.locator(`.filter-chip[data-filter-id="${filterId}"]`).click();
         const calendar = new ReactCalendar(page);
         await calendar.expectVisible();
         return calendar;
     }
 
     /**
-     * Waits for the date popup after "Add filter" → date option.
-     * Some date filters only add a chip; click the chip if the popup did not auto-open.
+     * Waits for the date popup after "Add filter" → date option. Some builds only add
+     * the chip without opening the popup; `chip` is clicked in that case.
      * @param {import('@playwright/test').Page} page
-     * @param {{ chipText?: string|RegExp }} [options]
+     * @param {import('@playwright/test').Locator} chip
      */
-    static async waitForOpen(page, { chipText } = {}) {
+    static async waitForOpen(page, chip) {
         const calendar = new ReactCalendar(page);
-        const opened = await calendar.root
+        const openedByItself = await calendar.root
             .waitFor({ state: 'visible', timeout: 5_000 })
-            .then(() => true)
-            .catch(() => false);
-        if (!opened) {
-            if (chipText) {
-                const chip = page.locator('.filter-chip').filter({ hasText: chipText }).last();
-                await expect(chip).toBeVisible({ timeout: 10_000 });
-                await chip.click();
-            }
-            await calendar.expectVisible();
-        } else {
-            await expect(calendar.startInput()).toBeVisible({ timeout: 10_000 });
+            .then(() => true, () => false);
+        if (!openedByItself) {
+            await chip.click();
         }
+        await calendar.expectVisible();
         return calendar;
     }
 
     startInput() {
-        return this.root.locator(`input[name="${START_NAME}"]`);
+        return this.root.locator(START_INPUTS).first();
     }
 
     endInput() {
-        return this.root.locator(END_NAMES).first();
+        return this.root.locator(END_INPUTS).first();
     }
 
     applyRangeCheckbox() {
-        return this.root.locator(
-            '.switcher input[type="checkbox"], '
-            + '.controller--switch input[type="checkbox"]',
-        ).first();
+        return this.root.locator('.switcher input[type="checkbox"], .controller--switch input[type="checkbox"]').first();
     }
 
     applyRangeSwitcher() {
@@ -134,6 +117,18 @@ export class ReactCalendar {
         return footer.or(byName).first();
     }
 
+    navigationLabel() {
+        return this.root.locator('.react-calendar__navigation__label__labelText').first();
+    }
+
+    /** Enabled day tile for a `DD-MM-YYYY` value in the displayed month. */
+    dayTile(value) {
+        const name = toCalendarAriaLabel(value);
+        return this.root
+            .locator(`.react-calendar__tile:not([disabled]):has(abbr[aria-label="${name}"])`)
+            .first();
+    }
+
     async expectVisible({ timeout = 15_000 } = {}) {
         await expect(this.root).toBeVisible({ timeout });
         await expect(this.startInput()).toBeVisible({ timeout });
@@ -144,66 +139,36 @@ export class ReactCalendar {
     }
 
     /**
-     * Ensures range mode (Date to visible) or exact mode (Apply range off).
+     * Turns "Apply range" on (Date from + Date to) or off (exact day).
      * @param {boolean} enabled
      */
     async ensureRangeMode(enabled) {
-        const endVisible = async () => this.endInput().isVisible().catch(() => false);
-        if ((await endVisible()) === enabled) {
-            const checkbox = this.applyRangeCheckbox();
-            if (await checkbox.count()) {
-                const checked = await checkbox.isChecked().catch(() => null);
-                if (checked === enabled) return;
-            } else if (enabled) {
-                return;
-            }
-        }
-
         const checkbox = this.applyRangeCheckbox();
-        if (await checkbox.count()) {
-            const checked = await checkbox.isChecked().catch(() => null);
-            if (checked !== null && checked !== enabled) {
-                await this.applyRangeSwitcher().click().catch(async () => {
-                    await checkbox.setChecked(enabled, { force: true });
-                });
-            }
-        } else {
-            await this.root.getByText(APPLY_RANGE_LABEL).first().click().catch(() => { });
+        if ((await checkbox.isChecked()) !== enabled) {
+            await this.applyRangeSwitcher().click();
         }
-
         if (enabled) {
-            await expect(this.endInput()).toBeVisible({ timeout: 8_000 });
-            return;
+            await expect(checkbox).toBeChecked();
+            await expect(this.endInput()).toBeVisible();
+        } else {
+            await expect(checkbox).not.toBeChecked();
         }
-
-        await expect
-            .poll(async () => endVisible(), {
-                timeout: 8_000,
-                message: 'Apply-range switcher did not hide the Date to input',
-            })
-            .toBe(false)
-            .catch(() => { });
     }
 
     /**
+     * Types a date and reports whether the input kept it.
      * @param {import('@playwright/test').Locator} input
      * @param {string} value dd-MM-yyyy or dd/MM/yyyy
      */
-    async fillDate(input, value) {
+    async typeDate(input, value) {
         const formatted = toCalendarInputDate(value);
         await expect(input).toBeVisible();
         await input.click();
-        await input.fill('');
-        await input.fill(formatted);
-        let committed = await input.inputValue().catch(() => '');
-        if (committed !== formatted) {
-            await input.press('Control+A');
-            await input.press('Backspace');
-            await input.pressSequentially(formatted, { delay: 30 });
-            committed = await input.inputValue().catch(() => '');
-        }
-        await input.blur().catch(() => input.press('Tab').catch(() => { }));
-        return (await input.inputValue().catch(() => '')) === formatted;
+        await input.press('Control+A');
+        await input.press('Backspace');
+        await input.pressSequentially(formatted, { delay: 30 });
+        await input.blur();
+        return (await input.inputValue()) === formatted;
     }
 
     /**
@@ -212,11 +177,8 @@ export class ReactCalendar {
      * @returns {Promise<{ month: number, year: number }>}
      */
     async readDisplayedMonthYear() {
-        const labelText = (await this.root
-            .locator('.react-calendar__navigation__label__labelText')
-            .first()
-            .innerText()
-            .catch(() => '')).trim();
+        const label = this.navigationLabel();
+        const labelText = (await label.count()) ? (await label.innerText()).trim() : '';
         const fromLabel = Date.parse(`${labelText} 1`);
         if (!Number.isNaN(fromLabel)) {
             const d = new Date(fromLabel);
@@ -224,12 +186,10 @@ export class ReactCalendar {
         }
 
         const labels = await this.root
-            .locator(
-                '.react-calendar__tile:not(.react-calendar__month-view__days__day--neighboringMonth) abbr[aria-label]',
-            )
+            .locator('.react-calendar__tile:not(.react-calendar__month-view__days__day--neighboringMonth) abbr[aria-label]')
             .evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') || ''));
-        for (const label of labels) {
-            const m = label.match(/^([A-Za-z]+) \d+, (\d{4})$/);
+        for (const ariaLabel of labels) {
+            const m = ariaLabel.match(/^([A-Za-z]+) \d+, (\d{4})$/);
             if (!m) continue;
             const month = new Date(`${m[1]} 1, 2000`).getMonth() + 1;
             return { month, year: Number(m[2]) };
@@ -242,60 +202,21 @@ export class ReactCalendar {
      * @param {string} value
      */
     async navigateToMonth(value) {
-        const { month: targetMonth, year: targetYear } = parseCalendarParts(value);
-        const targetIdx = targetYear * 12 + targetMonth;
+        const target = monthIndex(parseCalendarParts(value));
         const prev = this.root.locator('.react-calendar__navigation__prev-button');
         const next = this.root.locator('.react-calendar__navigation__next-button');
 
         for (let step = 0; step < 48; step++) {
-            const current = await this.readDisplayedMonthYear();
-            const currentIdx = current.year * 12 + current.month;
-            if (currentIdx === targetIdx) return;
-            if (currentIdx > targetIdx) {
-                await prev.click();
-            } else {
-                await next.click();
-            }
-            await this.page.waitForTimeout(120);
+            const current = monthIndex(await this.readDisplayedMonthYear());
+            if (current === target) return;
+            await (current > target ? prev : next).click();
+            await expect
+                .poll(async () => monthIndex(await this.readDisplayedMonthYear()), {
+                    message: 'Calendar month did not change after clicking a navigation arrow',
+                })
+                .not.toBe(current);
         }
-        throw new Error(
-            `Calendar did not reach ${String(targetMonth).padStart(2, '0')}-${targetYear} within 48 steps`,
-        );
-    }
-
-    /**
-     * Click a day tile by value when it is enabled/visible.
-     * @param {string} value
-     * @returns {Promise<boolean>}
-     */
-    async clickDay(value) {
-        const name = toCalendarAriaLabel(value);
-        const tile = this.root
-            .locator(`.react-calendar__tile:not([disabled]):has(abbr[aria-label="${name}"])`)
-            .first();
-        if (await tile.isVisible().catch(() => false)) {
-            await tile.click();
-            return true;
-        }
-        const byRole = this.root.getByRole('button', { name, exact: true });
-        if (await byRole.isEnabled().catch(() => false)
-            && await byRole.isVisible().catch(() => false)) {
-            await byRole.click();
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * @param {string} ariaLabel e.g. "August 10, 2026"
-     */
-    async clickDayByAriaLabel(ariaLabel) {
-        const tile = this.root
-            .locator('.react-calendar__tile:not([disabled])')
-            .filter({ has: this.page.locator(`abbr[aria-label="${ariaLabel}"]`) })
-            .first();
-        await expect(tile).toBeVisible({ timeout: 10_000 });
-        await tile.click();
+        throw new Error(`Calendar did not reach ${toCalendarInputDate(value).slice(3)} within 48 steps`);
     }
 
     /**
@@ -305,17 +226,12 @@ export class ReactCalendar {
      */
     async selectBound(value, which) {
         const input = which === 'end' ? this.endInput() : this.startInput();
-        if (await this.fillDate(input, value)) {
+        if (await this.typeDate(input, value)) {
             return;
         }
         await this.navigateToMonth(value);
-        if (await this.clickDay(value)) {
-            return;
-        }
-        throw new Error(
-            `Could not set ${which} date ${toCalendarInputDate(value)} `
-            + '(typed value did not stick and the day tile was unavailable).',
-        );
+        await this.dayTile(value).click();
+        await expect(input).toHaveValue(toCalendarInputDate(value));
     }
 
     /**
@@ -329,46 +245,30 @@ export class ReactCalendar {
         await this.selectBound(startDate, 'start');
         if (endDate) {
             await this.selectBound(endDate, 'end');
-            await expect(this.endInput()).toHaveValue(toCalendarInputDate(endDate), {
-                timeout: 8_000,
-            });
+            await expect(this.endInput()).toHaveValue(toCalendarInputDate(endDate));
         }
-        await expect(this.startInput()).toHaveValue(toCalendarInputDate(startDate), {
-            timeout: 8_000,
-        });
+        await expect(this.startInput()).toHaveValue(toCalendarInputDate(startDate));
     }
 
     /**
-     * Exact day: Apply range OFF (Date to hidden), Date from only.
-     * If the switcher cannot hide Date to, fills start = end.
+     * Exact day: Apply range OFF, Date from only. Builds that keep Date to visible get
+     * the same day in both inputs.
      * @param {string} dateOnly
      */
     async setExact(dateOnly) {
         await this.expectVisible();
         await this.ensureRangeMode(false);
         await this.selectBound(dateOnly, 'start');
-        if (await this.endInput().isVisible().catch(() => false)) {
+        if (await this.endInput().isVisible()) {
             await this.selectBound(dateOnly, 'end');
         }
-        await expect(this.startInput()).toHaveValue(toCalendarInputDate(dateOnly), {
-            timeout: 8_000,
-        });
+        await expect(this.startInput()).toHaveValue(toCalendarInputDate(dateOnly));
     }
 
-    /** Clicks Apply and waits for the filter popup to close. */
+    /** Clicks Apply and waits for the popup to close. */
     async apply() {
-        if (!(await this.root.isVisible().catch(() => false))) {
-            return;
-        }
         const apply = this.applyButton();
-        await expect(apply).toBeVisible({ timeout: 10_000 });
-        if (!(await apply.isEnabled().catch(() => false))) {
-            await this.startInput().press('Enter').catch(() => { });
-            if (!(await this.root.isVisible().catch(() => false))) {
-                return;
-            }
-        }
-        await expect(apply).toBeEnabled({ timeout: 10_000 });
+        await expect(apply).toBeEnabled();
         await apply.click();
         await this.expectHidden();
     }

@@ -1,130 +1,83 @@
 import { expect } from '@playwright/test';
 import { Sidebar } from '../components/sidebar.component.js';
-import { waitForGridToLoad, waitForReportsGridToLoad } from '../../helpers.js';
-import { ROUTES } from './auth.flow.js';
-import { handleProfileVerification } from './profileVerification.flow.js';
+import { TransactionsGrid } from '../components/transactionsGrid.component.js';
+import { ReportsGrid } from '../components/reportsGrid.component.js';
+import { CreateReportModal } from '../components/createReportModal.component.js';
+import { login, signInPasswordInput, ROUTES } from './auth.flow.js';
+
+const FIRST_RENDER_TIMEOUT = 30_000;
 
 /**
- * Lands on the dashboard page assuming the user is already authenticated via storageState.
- * Falls back to interactive login if the auth session has expired.
+ * Opens an app route with the saved session. Every page load silently fetches a fresh
+ * access token from Keycloak; when that SSO session is gone the app redirects to the
+ * sign-in form before rendering anything, so sign in once and reopen the route.
  *
  * @param {import('@playwright/test').Page} page
+ * @param {string} route - one of {@link ROUTES}
  */
-export async function goToDashboard(page) {
-    if (!page.url().includes(ROUTES.dashboard)) {
-        await page.goto(ROUTES.dashboard, { waitUntil: 'domcontentloaded' });
+async function openRoute(page, route) {
+    const sidebar = new Sidebar(page);
+    const passwordInput = signInPasswordInput(page);
+    const rendered = sidebar.container.or(passwordInput).first();
+
+    await page.goto(route, { waitUntil: 'domcontentloaded' });
+    const renderedInTime = await rendered
+        .waitFor({ timeout: FIRST_RENDER_TIMEOUT })
+        .then(() => true, () => false);
+    if (!renderedInTime) {
+        // Neither recovers by itself: a failed app-bundle download leaves a blank page, and a
+        // failed token check makes the app stop on Keycloak's unconfirmed logout page (the
+        // SSO session is still valid there, so opening the route again signs back in).
+        console.log(`[Navigation] ${route} rendered nothing within ${FIRST_RENDER_TIMEOUT / 1000}s `
+            + `(at ${page.url()}) — opening it again.`);
+        await page.goto(route, { waitUntil: 'domcontentloaded' });
     }
-    await expect(page).toHaveURL(new RegExp(`${ROUTES.dashboard}$`));
-    const dashboardHeader = page.locator('.application-list__top p').first();
-    await expect(dashboardHeader).toBeVisible({ timeout: 30_000 });
-    await expect(dashboardHeader).toContainText('Հայտերի պատմություն');
+    await expect(rendered).toBeVisible({ timeout: 60_000 });
+    if (await passwordInput.isVisible()) {
+        console.log(`[Navigation] Keycloak session expired while opening ${route} — signing in again.`);
+        await login(page);
+        await page.goto(route, { waitUntil: 'domcontentloaded' });
+        await expect(sidebar.container, `still signed out after re-login (${route})`)
+            .toBeVisible({ timeout: 60_000 });
+    }
+    await expect(page).toHaveURL(new RegExp(`${route}$`));
+    await sidebar.collapse();
 }
 
 /**
- * Collapses the side navigation. The auth storageState can carry a persisted
- * `--opened --pin` sidebar preference that overlaps filter chips and intercepts pointer
- * events. We remove the `--opened` class so the sidebar collapses to its narrow pinned width.
+ * Opens Transactions and waits for its first grid query to render.
  *
  * @param {import('@playwright/test').Page} page
- */
-export async function collapseSidebar(page) {
-    await page.mouse.move(0, 0);
-    await page.evaluate(() => {
-        document.querySelectorAll('.side-navigation.side-navigation--opened').forEach((el) => {
-            el.classList.remove('side-navigation--opened');
-        });
-    }).catch(() => { });
-}
-
-/**
- * Navigates to the Transactions page via the sidebar and waits for the grid to settle.
- *
- * @param {import('@playwright/test').Page} page
+ * @returns {Promise<import('../components/transactionsGrid.component.js').TransactionsPage>}
+ *   the default view (last 14 days, no filters) as returned by the API
  */
 export async function goToTransactions(page) {
-    // reports / reportsArchive both contain the transactions path as a substring,
-    // so only treat the bare transactions route as "already here".
-    const alreadyHere =
-        page.url().includes(ROUTES.transactions) && !page.url().includes(ROUTES.reports);
-    if (!alreadyHere) {
-        // Direct deep-link is far cheaper than the dashboard -> sidebar hop (one fewer
-        // full page load per test). Fall back to sidebar nav only if auth lapsed and
-        // we got bounced off the page.
-        await page.goto(ROUTES.transactions, { waitUntil: 'domcontentloaded' });
-        const landed =
-            page.url().includes(ROUTES.transactions) && !page.url().includes(ROUTES.reports);
-        if (!landed) {
-            await goToDashboard(page);
-            const sidebar = new Sidebar(page);
-            await sidebar.navigate('Գործարքներ');
-            await page.waitForURL(`**${ROUTES.transactions}`);
-        }
-    }
-    await collapseSidebar(page);
-    await handleProfileVerification(page);
-    await waitForGridToLoad(page, 90000, { allowEmpty: true });
+    const grid = new TransactionsGrid(page);
+    return grid.waitForQuery(async () => {
+        await openRoute(page, ROUTES.transactions);
+        await expect(grid.table).toBeVisible({ timeout: 60_000 });
+    }, {
+        description: 'the default Transactions view',
+        allowEmpty: true,
+        timeout: 90_000,
+    });
 }
 
 /**
- * Navigates to the Reports page via the sidebar and waits for the grid to settle.
- *
+ * Opens the active Reports page and waits for its grid.
  * @param {import('@playwright/test').Page} page
  */
 export async function goToReports(page) {
-    // The archive URL contains the reports URL as a substring, so exclude it
-    // explicitly - otherwise we'd treat the archive page as "already on reports".
-    const alreadyHere =
-        page.url().includes(ROUTES.reports) && !page.url().includes(ROUTES.reportsArchive);
-    if (!alreadyHere) {
-        // Direct deep-link instead of the dashboard -> sidebar hop. Fall back to
-        // sidebar nav only if auth lapsed and the direct load bounced us elsewhere.
-        await page.goto(ROUTES.reports, { waitUntil: 'domcontentloaded' });
-        const landed =
-            page.url().includes(ROUTES.reports) && !page.url().includes(ROUTES.reportsArchive);
-        if (!landed) {
-            await goToDashboard(page);
-            const sidebar = new Sidebar(page);
-            await sidebar.navigate('Հաշվետվություններ');
-            // Anchor to the exact reports path — the archive URL contains it as a substring.
-            await page.waitForURL(new RegExp(`${ROUTES.reports}$`));
-        }
-    }
-    await collapseSidebar(page);
-    await handleProfileVerification(page);
-    await waitForReportsGridToLoad(page);
-    await expect(page.getByRole('button', { name: /^(Ստեղծել|Create)$/ })).toBeVisible();
+    await openRoute(page, ROUTES.reports);
+    await new ReportsGrid(page).waitForLoad();
+    await expect(new CreateReportModal(page).openButton).toBeVisible();
 }
 
 /**
- * Navigates to the Archived reports page and waits for its grid to settle.
- *
+ * Opens the Archived reports page and waits for its grid.
  * @param {import('@playwright/test').Page} page
  */
 export async function goToArchivedReports(page) {
-    if (!page.url().includes(ROUTES.reportsArchive)) {
-        await page.goto(ROUTES.reportsArchive, { waitUntil: 'domcontentloaded' });
-    }
-    await expect(page).toHaveURL(new RegExp(`${ROUTES.reportsArchive}$`));
-    await collapseSidebar(page);
-    await handleProfileVerification(page);
-    await waitForReportsGridToLoad(page);
-}
-
-/**
- * Navigates to the Analytics page and waits until the lock screen (if any) is gone.
- *
- * @param {import('@playwright/test').Page} page
- */
-export async function goToAnalytics(page) {
-    if (!page.url().includes(ROUTES.analytics)) {
-        await page.goto(ROUTES.analytics, { waitUntil: 'domcontentloaded' });
-        if (!page.url().includes(ROUTES.analytics)) {
-            await goToDashboard(page);
-            const sidebar = new Sidebar(page);
-            await sidebar.navigateByHref(ROUTES.analytics);
-            await page.waitForURL(new RegExp(`${ROUTES.analytics}$`));
-        }
-    }
-    await collapseSidebar(page);
-    await handleProfileVerification(page);
+    await openRoute(page, ROUTES.reportsArchive);
+    await new ReportsGrid(page).waitForLoad();
 }

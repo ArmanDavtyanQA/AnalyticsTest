@@ -1,5 +1,3 @@
-import { expect } from '@playwright/test';
-
 export class Sidebar {
     /**
      * @param {import('@playwright/test').Page} page
@@ -10,32 +8,15 @@ export class Sidebar {
     }
 
     /**
-     * Navigates to a menu item by its visible text.
-     * @param {string} menuText
+     * Collapses the navigation. The storageState can carry a persisted `--opened --pin`
+     * preference that makes it overlap filter chips and the grids' sticky action cells.
      */
-    async navigate(menuText) {
-        const link = this.container.locator('.navigation-item__inner a').filter({ hasText: menuText }).first();
-        await expect(link).toBeVisible();
-        await link.click();
-    }
-
-    /**
-     * Navigates to a menu item by its href attribute.
-     * @param {string} path
-     */
-    async navigateByHref(path) {
-        const link = this.container.locator(`a[href="${path}"]`);
-        await expect(link).toBeVisible();
-        await link.click();
-    }
-
-    /**
-     * Validates that a menu item is currently active.
-     * @param {string} menuText
-     */
-    async expectActive(menuText) {
-        const activeItem = this.container.locator('.navigation-item__inner.active');
-        await expect(activeItem).toBeVisible();
-        await expect(activeItem.locator('p')).toHaveText(menuText);
+    async collapse() {
+        await this.page.mouse.move(0, 0);
+        await this.page.evaluate(() => {
+            document.querySelectorAll('.side-navigation.side-navigation--opened').forEach((el) => {
+                el.classList.remove('side-navigation--opened');
+            });
+        });
     }
 }

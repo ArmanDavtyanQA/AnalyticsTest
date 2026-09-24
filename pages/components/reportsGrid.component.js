@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import { waitForReportsGridToLoad } from '../../helpers.js';
+import { Sidebar } from './sidebar.component.js';
 
 /**
  * Localized UI copy used by the reports grid row actions.
@@ -17,20 +17,15 @@ const TEXT = {
     editSubmit: /^(Confirm change|Հաստատել փոփոխությունը)$/i,
     reviewSubmit: /^(Create|Ստեղծել)$/i,
     basicSection: /^(Basic|Հիմնական)$/i,
+    emptyState: /արդյունքներ չեն գտնվել|no results found|no data/i,
 };
 
-const ROW =
-    '.transactions-reports-wrapper table tbody tr, .reports-table table tbody tr, '
-    + '.transactions-wrapper__listing table tbody tr, table tbody tr';
+const ROOT = '.transactions-reports-wrapper';
 const NAME_CELL = 'td[id$="_name"]';
 const ACTIONS_CELL = 'td[id$="_actions"]';
-const GRID_SCROLL_ROOT =
-    '.transactions-reports-wrapper, .reports-table, .transactions-wrapper__listing';
+const LOAD_TIMEOUT = 90_000;
 
-/**
- * Small console logger so every action and assertion shows up in the test output,
- * as requested ("for all success or fail cases please add logs").
- */
+/** Every action and assertion is logged so reports runs are traceable from the console. */
 function log(msg) {
     console.log(`[ReportsGrid] ${msg}`);
 }
@@ -50,15 +45,28 @@ export class ReportsGrid {
      */
     constructor(page) {
         this.page = page;
-        this.rows = page.locator(ROW);
+        this.root = page.locator(ROOT).first();
+        this.rows = this.root.locator('table tbody tr');
+        this.nameCells = this.root.locator(`${NAME_CELL} p`);
+        this.emptyState = this.root.locator('p', { hasText: TEXT.emptyState }).first();
+        this.skeletons = this.root.locator('.react-loading-skeleton').filter({ visible: true });
+    }
+
+    /**
+     * Waits for the grid to finish loading: report names painted (or the empty state)
+     * and no loading skeletons left. The grid never refreshes by itself after mutations.
+     */
+    async waitForLoad({ timeout = LOAD_TIMEOUT } = {}) {
+        await expect(this.nameCells.or(this.emptyState).first()).toBeVisible({ timeout });
+        await expect(this.skeletons).toHaveCount(0, { timeout });
+        return this;
     }
 
     /** Reloads the page and waits for the reports grid to settle. */
-    async reload({ gridTimeout = 90_000 } = {}) {
+    async reload() {
         log('reloading grid');
-        const url = this.page.url();
-        await this.page.goto(url, { waitUntil: 'domcontentloaded' });
-        await waitForReportsGridToLoad(this.page, gridTimeout);
+        await this.page.reload({ waitUntil: 'domcontentloaded' });
+        await this.waitForLoad();
         return this;
     }
 
@@ -70,14 +78,11 @@ export class ReportsGrid {
     }
 
     /**
-     * Returns report names visible in the current grid whose text contains `substring`.
-     * Scrolls the grid first so virtualized / paginated rows are included.
+     * Report names in the current grid whose text contains `substring`.
      * Reloads are the caller's responsibility when iterating after mutations.
      */
     async collectNamesContaining(substring) {
-        await this.ensureAllRowsVisible();
-        const nameLocator = this.page.locator(`${ROW} ${NAME_CELL} p, ${ROW} ${NAME_CELL}`);
-        const texts = await nameLocator.allInnerTexts();
+        const texts = await this.nameCells.allInnerTexts();
         const names = [...new Set(
             texts
                 .map((text) => text.trim().split('\n')[0].trim())
@@ -87,68 +92,27 @@ export class ReportsGrid {
         return names;
     }
 
-    /** Scrolls the reports table until the row count stabilizes (pagination / virtual scroll). */
-    async ensureAllRowsVisible() {
-        let previousCount = 0;
-        for (let attempt = 0; attempt < 12; attempt++) {
-            const count = await this.rows.count();
-            if (count === previousCount && attempt > 0) {
-                return;
-            }
-            previousCount = count;
-            const lastRow = this.rows.last();
-            if (count > 0) {
-                await lastRow.scrollIntoViewIfNeeded().catch(() => { });
-            }
-            await this.page.locator(`${GRID_SCROLL_ROOT} table, table`).first().evaluate((table) => {
-                const wrapper =
-                    table.closest('.transactions-reports-wrapper')
-                    ?? table.closest('.transactions-wrapper__listing')
-                    ?? table.closest('.reports-table')?.parentElement
-                    ?? table.parentElement?.parentElement
-                    ?? table.parentElement;
-                if (wrapper && wrapper.scrollHeight > wrapper.clientHeight) {
-                    wrapper.scrollTop = wrapper.scrollHeight;
-                }
-            }).catch(() => { });
-        }
-    }
-
-    /** Collapse an opened sidebar so sticky row actions are not covered. */
-    async ensureActionsReachable() {
-        await this.page.mouse.move(0, 0);
-        await this.page.evaluate(() => {
-            document.querySelectorAll('.side-navigation.side-navigation--opened').forEach((el) => {
-                el.classList.remove('side-navigation--opened');
-            });
-        }).catch(() => { });
-    }
-
     /**
      * Scrolls a row's sticky actions cell into the clickable viewport. The actions
      * column is pinned to the right; without horizontal scroll the toggle / menu
      * clicks often miss or hit an overlapping element.
      */
     async prepareRowActions(row) {
-        await this.ensureActionsReachable();
+        await new Sidebar(this.page).collapse();
         const actions = row.locator(ACTIONS_CELL);
         await actions.scrollIntoViewIfNeeded();
         await actions.evaluate((cell) => {
             cell.scrollIntoView({ block: 'nearest', inline: 'end' });
-            const wrapper =
-                cell.closest('.transactions-reports-wrapper')
-                ?? cell.closest('.reports-table')?.parentElement
-                ?? cell.closest('.transactions-wrapper__listing')
-                ?? cell.closest('main');
+            const wrapper = cell.closest('.transactions-reports-wrapper') ?? cell.closest('main');
             if (wrapper && wrapper.scrollWidth > wrapper.clientWidth) {
                 wrapper.scrollLeft = wrapper.scrollWidth;
             }
         });
     }
 
-    /** Returns whether a report row with an exact title match is visible (non-throwing). */
-    async hasReport(name, { timeout = 5_000 } = {}) {
-        return this.rowByName(name).first().isVisible({ timeout }).catch(() => false);
+    /** Whether a row with an exact title match is in the loaded grid (non-throwing). */
+    async hasReport(name) {
+        return (await this.rowByName(name).count()) > 0;
     }
 
     /** Asserts the report is present and returns its row locator. */
@@ -181,20 +145,9 @@ export class ReportsGrid {
      * reload may still show the old row.
      */
     async waitUntilNotInGrid(name, { reloads = 5 } = {}) {
-        for (let attempt = 0; attempt < reloads; attempt++) {
-            const absent = await this.rowByName(name)
-                .count()
-                .then((count) => count === 0)
-                .catch(() => false);
-            if (absent) {
-                log(`PASS: report "${name}" is absent from the grid`);
-                return;
-            }
-            if (attempt < reloads - 1) {
-                log(`"${name}" still in grid — reloading (${attempt + 2}/${reloads})`);
-                // Shorter wait on recheck reloads — grid was already loaded once this action.
-                await this.reload({ gridTimeout: 90_000 });
-            }
+        for (let attempt = 0; attempt < reloads && await this.hasReport(name); attempt++) {
+            log(`"${name}" still in grid — reloading (${attempt + 1}/${reloads})`);
+            await this.reload();
         }
         await this.expectNotInGrid(name);
     }
@@ -203,11 +156,6 @@ export class ReportsGrid {
     toggleCheckbox(name) {
         const actions = this.rowByName(name).first().locator(ACTIONS_CELL);
         return actions.locator('.switcher input[type="checkbox"], input[type="checkbox"]').first();
-    }
-
-    /** Returns whether the report's toggle is currently active (checked). */
-    async isActive(name) {
-        return this.toggleCheckbox(name).isChecked();
     }
 
     /** Asserts the toggle state of a report and logs the result. */
@@ -223,23 +171,20 @@ export class ReportsGrid {
         }
     }
 
-    /**
-     * Waits for a toggle to reach the expected state, reloading between checks.
-     * The reports grid does not auto-refresh and the activate/deactivate mutation
-     * can commit slightly after its confirmation modal closes, so a single reload
-     * may capture a stale (pre-commit) snapshot. Re-reading the same static page
-     * would never recover, hence the reload-and-recheck loop.
-     */
-    async isToggleState(name, active, { timeout = 5_000 } = {}) {
-        return this.toggleCheckbox(name)
-            .isChecked({ timeout })
-            .then((checked) => checked === active)
-            .catch(() => false);
+    /** Whether the loaded grid shows the report's toggle in the given state. */
+    async isToggleState(name, active) {
+        if (!(await this.hasReport(name))) return false;
+        return (await this.toggleCheckbox(name).isChecked()) === active;
     }
 
-    async waitForToggleState(name, active, { reloads = 5, perCheckTimeout = 5_000 } = {}) {
+    /**
+     * Waits for a toggle to reach the expected state, reloading between checks.
+     * The grid does not auto-refresh and the activate/deactivate mutation can commit
+     * slightly after its confirmation modal closes, so one reload may be stale.
+     */
+    async waitForToggleState(name, active, { reloads = 5 } = {}) {
         for (let attempt = 0; attempt < reloads; attempt++) {
-            if (await this.isToggleState(name, active, { timeout: perCheckTimeout })) {
+            if (await this.isToggleState(name, active)) {
                 log(`PASS: "${name}" toggle is ${active ? 'ACTIVE' : 'INACTIVE'}`);
                 return;
             }
@@ -280,17 +225,16 @@ export class ReportsGrid {
     }
 
     async toggleAndConfirm(name, confirmButtonText) {
+        const modal = this.confirmModal();
         for (let attempt = 0; attempt < 3; attempt++) {
             if (attempt > 0) {
-                await this.page.keyboard.press('Escape').catch(() => { });
+                await this.page.keyboard.press('Escape');
                 log(`toggle confirm modal did not open for "${name}" — retrying click (${attempt + 1}/3)`);
             }
             await this.clickToggle(name);
-            const modal = this.confirmModal();
             const opened = await modal
                 .waitFor({ state: 'visible', timeout: 5_000 })
-                .then(() => true)
-                .catch(() => false);
+                .then(() => true, () => false);
             if (opened) {
                 await modal.getByRole('button', { name: confirmButtonText }).click();
                 await expect(modal).toBeHidden();
@@ -369,13 +313,12 @@ export class ReportsGrid {
 
     /** Clicks the center of a locator — reliable for sticky / overlapped controls. */
     async clickLocatorCenter(locator) {
-        await locator.hover().catch(() => { });
+        await locator.hover({ force: true });
         const box = await locator.boundingBox();
-        if (box) {
-            await this.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-            return;
+        if (!box) {
+            throw new Error('Cannot click an element without a bounding box (not rendered).');
         }
-        await locator.click();
+        await this.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     }
 
     /**
@@ -391,40 +334,30 @@ export class ReportsGrid {
         return this.page.locator('.select__options, .menu-dropdown').filter({ visible: true }).last();
     }
 
-    /** Opens a row's 3-dot menu and returns the scoped menu container locator. */
-    async openRowMenu(name) {
+    /**
+     * Opens a row's 3-dot menu and clicks the option with `optionText`. Right after a
+     * reload the grid can re-render, which swallows the click or closes the menu again,
+     * so the menu is reopened until that option shows (3 attempts).
+     */
+    async runMenuAction(name, optionText) {
         const row = await this.expectInGrid(name);
-        await this.prepareRowActions(row);
         const moreBtn = row.locator(`${ACTIONS_CELL} button[data-id="more-icon-btn"]`);
-        await expect(moreBtn).toBeVisible();
-
-        // Scope options to the single open container (matching the wrapper + its
-        // children together would trip strict mode).
-        const menu = this.menuContainer();
-        for (let attempt = 0; attempt < 3; attempt++) {
-            if (attempt > 0) {
-                await this.page.keyboard.press('Escape').catch(() => { });
-                await this.prepareRowActions(row);
-            }
+        const option = this.menuContainer().locator('.select__option').filter({ hasText: optionText }).first();
+        for (let attempt = 1; ; attempt++) {
+            await this.prepareRowActions(row);
+            await expect(moreBtn).toBeVisible();
             await this.clickLocatorCenter(moreBtn);
             try {
-                await expect(menu.locator('.select__option').first()).toBeVisible({ timeout: 8_000 });
-                return menu;
-            } catch (e) {
-                if (attempt === 2) {
-                    throw e;
+                await expect(option).toBeVisible({ timeout: 8_000 });
+                break;
+            } catch (error) {
+                if (attempt === 3) {
+                    throw error;
                 }
-                log(`menu did not open for "${name}" — retrying (${attempt + 2}/3)`);
+                log(`menu for "${name}" did not show the option — reopening (${attempt + 1}/3)`);
+                await this.page.keyboard.press('Escape');
             }
         }
-        return menu;
-    }
-
-    /** Opens the row menu and clicks one of its options by exact text. */
-    async runMenuAction(name, optionText) {
-        const menu = await this.openRowMenu(name);
-        const option = menu.locator('.select__option').filter({ hasText: optionText }).first();
-        await expect(option).toBeVisible();
         await this.clickLocatorCenter(option);
     }
 
@@ -449,9 +382,11 @@ export class ReportsGrid {
             .filter({ has: this.page.locator('.reports-submit-review') });
         await expect(reviewModal).toBeVisible();
 
-        // Edit the "Basic" (Հիմնական) section.
-        const basicSection = reviewModal.locator('.reports-submit-review .item').filter({ hasText: TEXT.basicSection });
-        await basicSection.getByText(TEXT.editLink).click();
+        // Each section is a `.report-details` card: title <p> + Edit button, then its fields.
+        const basicSection = reviewModal
+            .locator('.reports-submit-review .report-details')
+            .filter({ has: this.page.getByText(TEXT.basicSection) });
+        await basicSection.getByRole('button', { name: TEXT.editLink }).click();
 
         // Edit modal carries the name input.
         const editModal = this.page

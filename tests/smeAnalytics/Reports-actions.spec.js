@@ -1,199 +1,100 @@
-import { test, expect } from '../../fixtures/index.js';
+import { test, withSignedInPage } from '../../fixtures/index.js';
 import { goToReports, goToArchivedReports } from '../../pages/flows/navigation.flow.js';
+import { removeReports } from '../../pages/flows/reports.flow.js';
 import {
     CreateReportModal,
     REPORT_FREQUENCY,
     REPORT_BY,
     REPORT_FILTERS,
-    expectReportInGrid,
 } from '../../pages/components/createReportModal.component.js';
-import { ReportsGrid } from '../../pages/components/reportsGrid.component.js';
 
 const REPORT_EMAIL = 'arman.davtyan.qa@gmail.com';
 
-async function createReport(page, base) {
-    const name = `${base} ${Date.now()}`;
-    console.log(`[setup] creating report "${name}"`);
-    await new CreateReportModal(page).create({
-        name,
-        email: REPORT_EMAIL,
-        frequency: REPORT_FREQUENCY.DAILY,
-        reportBy: REPORT_BY.SETTLEMENT_DATE,
-        filter: { id: REPORT_FILTERS.TERMINAL_ID, optionIndex: 0 },
-    });
-    console.log(`[setup] report "${name}" created`);
-    return name;
-}
-
 test.describe('Reports - row actions', { tag: '@reports' }, () => {
-    // Cases 1-7 act on ONE report created in case 1 (plus the duplicate made in
-    // case 4). Serial mode preserves order. Case 7 archives both reports from case 6
-    // and permanently deletes them from the archived grid (final cleanup).
+    // Every case acts on the report created by the first one (plus the copy made by
+    // "Duplicate"), so the chain runs in order and a retry restarts it with new names.
     test.describe.configure({ mode: 'serial' });
 
-    // Shared across the serial chain. The report is persisted server-side, so each
-    // (fresh-page) test only needs the names carried forward.
-    let reportName;
-    let duplicateName;
+    const reportName = `Autom Flow ${Date.now()}`;
+    const duplicateName = `Autom Flow Copy ${Date.now()}`;
 
     test.beforeEach(async ({ page }) => {
         await goToReports(page);
     });
 
-    test('Activate report via toggle', async ({ page }) => {
-        const grid = new ReportsGrid(page);
-        reportName = await createReport(page, 'Autom Flow');
-
-        await grid.reload();
-        await grid.expectToggleState(reportName, false);
-        // activate() reloads and re-asserts the persisted ON state internally.
-        await grid.activate(reportName);
+    test.afterAll(async ({ browser }, testInfo) => {
+        test.setTimeout(5 * 60_000);
+        await withSignedInPage(browser, testInfo, (page) => removeReports(page, [reportName, duplicateName]));
     });
 
-    test('Deactivate report via toggle', async ({ page }) => {
-        const grid = new ReportsGrid(page);
-        expect(reportName, 'report from case 1 is required').toBeTruthy();
+    test('Activate report via toggle', async ({ page, reportsGrid }) => {
+        await new CreateReportModal(page).create({
+            name: reportName,
+            email: REPORT_EMAIL,
+            frequency: REPORT_FREQUENCY.DAILY,
+            reportBy: REPORT_BY.SETTLEMENT_DATE,
+            filter: { id: REPORT_FILTERS.TERMINAL_ID, optionIndex: 0 },
+        });
+        await reportsGrid.reload();
+        await reportsGrid.expectToggleState(reportName, false);
 
-        await grid.reload();
-        await grid.expectToggleState(reportName, true);
-        // The report is active from case 1; deactivate() reloads + asserts OFF internally.
-        await grid.deactivate(reportName);
+        // activate() reloads and re-checks the persisted ON state.
+        await reportsGrid.activate(reportName);
     });
 
-    test('Open report History tab', async ({ page }) => {
-        const grid = new ReportsGrid(page);
-        expect(reportName, 'report from case 1 is required').toBeTruthy();
+    test('Deactivate report via toggle', async ({ reportsGrid }) => {
+        await reportsGrid.expectToggleState(reportName, true);
 
-        await grid.reload();
-        // Opens the previously deactivated report's details on the History tab.
-        await grid.openHistory(reportName);
-        await grid.expectHistoryTabOpen();
-        await grid.closeSideSheet();
+        await reportsGrid.deactivate(reportName);
     });
 
-    test('Duplicate and rename report', async ({ page }) => {
-        const grid = new ReportsGrid(page);
-        expect(reportName, 'report from case 1 is required').toBeTruthy();
+    test('Open report History tab', async ({ reportsGrid }) => {
+        await reportsGrid.openHistory(reportName);
 
-        await grid.reload();
-        // Independent name — NOT derived from reportName. If the copy embedded the
-        // parent name, substring-based row matching (`hasText`) would treat the
-        // duplicate row as the parent and break the archive/unarchive assertions.
-        duplicateName = `Autom Flow Copy ${Date.now()}`;
-        await grid.duplicate(reportName, duplicateName);
-
-        await expectReportInGrid(page, duplicateName);
+        await reportsGrid.expectHistoryTabOpen();
+        await reportsGrid.closeSideSheet();
     });
 
-    test('Archive report (main + duplicate gone from Active, present in Archived)', async ({ page }) => {
-        const grid = new ReportsGrid(page);
-        expect(reportName && duplicateName, 'report + duplicate from cases 1 & 4 are required').toBeTruthy();
+    test('Duplicate and rename report', async ({ reportsGrid }) => {
+        await reportsGrid.duplicate(reportName, duplicateName);
 
-        await grid.reload();
-        await grid.expectInGrid(reportName);
-        await grid.expectInGrid(duplicateName);
+        await reportsGrid.reload();
+        await reportsGrid.expectInGrid(duplicateName);
+    });
 
-        // Archive BOTH reports. archive() reloads the active grid and asserts each
-        // row is gone internally.
-        await grid.archive(reportName);
-        await grid.archive(duplicateName);
+    test('Archive report (main + duplicate gone from Active, present in Archived)', async ({ page, reportsGrid }) => {
+        // archive() reloads the active grid and waits for the row to disappear.
+        await reportsGrid.archive(reportName);
+        await reportsGrid.archive(duplicateName);
 
         await goToArchivedReports(page);
-        const archivedGrid = new ReportsGrid(page);
-        await archivedGrid.expectInGrid(reportName);
-        await archivedGrid.expectInGrid(duplicateName);
+        await reportsGrid.expectInGrid(reportName);
+        await reportsGrid.expectInGrid(duplicateName);
     });
 
-    test('Unarchive report (main + duplicate back to Active, gone from Archived)', async ({ page }) => {
-        expect(reportName && duplicateName, 'report + duplicate from cases 1 & 4 are required').toBeTruthy();
-
+    test('Unarchive report (main + duplicate back to Active, gone from Archived)', async ({ page, reportsGrid }) => {
         await goToArchivedReports(page);
-        const archivedGrid = new ReportsGrid(page);
-        await archivedGrid.expectInGrid(reportName);
-        await archivedGrid.expectInGrid(duplicateName);
+        await reportsGrid.unarchive(reportName);
+        await reportsGrid.unarchive(duplicateName);
 
-        // Unarchive the same two reports archived in case 5.
-        await archivedGrid.unarchive(reportName);
-        await archivedGrid.unarchive(duplicateName);
+        await reportsGrid.waitUntilNotInGrid(reportName);
+        await reportsGrid.waitUntilNotInGrid(duplicateName);
+        await goToReports(page);
+        await reportsGrid.expectInGrid(reportName);
+        await reportsGrid.expectInGrid(duplicateName);
+    });
 
-        await archivedGrid.reload();
-        await archivedGrid.expectNotInGrid(reportName);
-        await archivedGrid.expectNotInGrid(duplicateName);
+    test('Delete archived reports (main + duplicate gone from Archived and Active)', async ({ page, reportsGrid }) => {
+        await reportsGrid.archive(reportName);
+        await reportsGrid.archive(duplicateName);
+
+        // deleteReport() reloads the archived grid and waits for the row to disappear.
+        await goToArchivedReports(page);
+        await reportsGrid.deleteReport(reportName);
+        await reportsGrid.deleteReport(duplicateName);
 
         await goToReports(page);
-        const grid = new ReportsGrid(page);
-        await grid.expectInGrid(reportName);
-        await grid.expectInGrid(duplicateName);
-    });
-
-    test('Delete archived reports (main + duplicate gone from Archived and Active)', async ({ page }) => {
-        expect(reportName && duplicateName, 'report + duplicate from cases 1 & 4 are required').toBeTruthy();
-
-        const grid = new ReportsGrid(page);
-        await grid.reload();
-
-        const mainOnActive = await grid.hasReport(reportName);
-        const dupOnActive = await grid.hasReport(duplicateName);
-
-        if (!mainOnActive && !dupOnActive) {
-            await goToArchivedReports(page);
-            const archivedGrid = new ReportsGrid(page);
-            await archivedGrid.reload();
-            const mainOnArchived = await archivedGrid.hasReport(reportName);
-            const dupOnArchived = await archivedGrid.hasReport(duplicateName);
-
-            if (!mainOnArchived && !dupOnArchived) {
-                console.log(
-                    `[Reports-actions] "${reportName}" and "${duplicateName}" not found on `
-                    + 'active or archived grid — nothing to delete, passing.',
-                );
-                return;
-            }
-
-            if (mainOnArchived) await archivedGrid.deleteReport(reportName);
-            if (dupOnArchived) await archivedGrid.deleteReport(duplicateName);
-
-            await goToReports(page);
-            const activeGrid = new ReportsGrid(page);
-            await activeGrid.reload();
-            if (!(await activeGrid.hasReport(reportName)) && !(await activeGrid.hasReport(duplicateName))) {
-                console.log('[Reports-actions] final delete from archived grid complete');
-            }
-            return;
-        }
-
-        if (mainOnActive) await grid.archive(reportName);
-        else {
-            console.log(`[Reports-actions] "${reportName}" not on active grid — skipping archive.`);
-        }
-        if (dupOnActive) await grid.archive(duplicateName);
-        else {
-            console.log(`[Reports-actions] "${duplicateName}" not on active grid — skipping archive.`);
-        }
-
-        await goToArchivedReports(page);
-        const archivedGrid = new ReportsGrid(page);
-        await archivedGrid.reload();
-
-        const mainOnArchived = await archivedGrid.hasReport(reportName);
-        const dupOnArchived = await archivedGrid.hasReport(duplicateName);
-
-        if (!mainOnArchived && !dupOnArchived) {
-            console.log(
-                `[Reports-actions] "${reportName}" and "${duplicateName}" not on archived grid `
-                + 'after archive — nothing to delete, passing.',
-            );
-            return;
-        }
-
-        if (mainOnArchived) await archivedGrid.deleteReport(reportName);
-        if (dupOnArchived) await archivedGrid.deleteReport(duplicateName);
-
-        await goToReports(page);
-        const activeGrid = new ReportsGrid(page);
-        await activeGrid.reload();
-        if (await activeGrid.hasReport(reportName) || await activeGrid.hasReport(duplicateName)) {
-            console.log('[Reports-actions] warning: flow report(s) still visible on active grid after delete');
-        }
+        await reportsGrid.expectNotInGrid(reportName);
+        await reportsGrid.expectNotInGrid(duplicateName);
     });
 });

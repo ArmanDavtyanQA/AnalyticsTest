@@ -1,12 +1,13 @@
 import { expect } from '@playwright/test';
+import { TransactionsGrid, GRID_COLUMNS } from './transactionsGrid.component.js';
 
 /** Row item — new builds use transactions-list-card__item; legacy used list-card__item. */
 const ITEM =
     '.transactions-list-card__item, .list-card__item.transaction-list-item, .list-card__item';
 
 /**
- * Known transaction-detail fields keyed for tests.
- * Each entry lists bilingual label text shown in the first `<p>` of the row item.
+ * Transaction-detail fields used by tests: the bilingual label in the first `<p>` of the
+ * row item. The sheet shows no serial number or address; use the grid for those.
  */
 export const SIDE_SHEET_FIELDS = {
     CREATION_DATE: /^(Creation Date|Ստեղծման ամսաթիվ)$/i,
@@ -17,22 +18,7 @@ export const SIDE_SHEET_FIELDS = {
     RRN_1: /^RRN 1$/i,
     RRN_2: /^RRN 2$/i,
     RRN_3: /^RRN 3$/i,
-    TERMINAL_ID: /^(Terminal ID|Տերմինալի ID)$/i,
-    SERIAL_NUMBER: /^(Serial number|Սերիական համար)$/i,
-    ADDRESS: /^(Address|Հասցե)$/i,
-};
-
-/** @deprecated Numeric section/item pairs — map to {@link SIDE_SHEET_FIELDS} keys. */
-const LEGACY_FIELD_MAP = {
-    '1:3': 'SETTLEMENT_DATE',
-    '1:1': 'TERMINAL_ID',
-    '4:1': 'SERIAL_NUMBER',
-    '3:2': 'ADDRESS',
-    'DETAILS_CARD:AUTHORIZATION_CODE': 'AUTHORIZATION_CODE',
-    'DETAILS_CARD:RRN_1': 'RRN_1',
-    'DETAILS_CARD:RRN_2': 'RRN_2',
-    'DETAILS_CARD:RRN_3': 'RRN_3',
-    'DETAILS_CARD:TERMINAL_ID': 'TERMINAL_ID',
+    TERMINAL_ID: /^(Terminal ID|Տերմինալ ID|Տերմինալի ID)$/i,
 };
 
 /** True when side-sheet text is a real value (not empty / literal "null null" / N/A). */
@@ -45,61 +31,37 @@ export const isSideSheetValuePopulated = (text) => {
     );
 };
 
-/** Usable as a filter-dropdown search seed (same rules as populated side-sheet values). */
-export const isUsableFilterSeed = (text) => isSideSheetValuePopulated(text);
-
-/** Resolves legacy (section, item) or (sectionKey, itemKey) to a {@link SIDE_SHEET_FIELDS} key. */
-export function resolveSideSheetFieldKey(sectionOrField, itemKey) {
-    if (itemKey === undefined || itemKey === null) {
-        return sectionOrField;
-    }
-    const legacy = LEGACY_FIELD_MAP[`${sectionOrField}:${itemKey}`];
-    if (legacy) {
-        return legacy;
-    }
-    if (typeof itemKey === 'string' && SIDE_SHEET_FIELDS[itemKey]) {
-        return itemKey;
-    }
-    throw new Error(
-        `Unknown side-sheet field mapping for section=${sectionOrField}, item=${itemKey}. `
-        + 'Use a SIDE_SHEET_FIELDS key (e.g. "SETTLEMENT_DATE") instead of numeric indices.',
-    );
-}
-
 /**
- * Reads the visible value from a side-sheet row item.
- * Structure: label `<p>` + value `<p>` containing a copy button and a `<span>`.
+ * Reads the visible value from a side-sheet row item (`''` when the row is absent).
+ * Structure: label `<p>` + value `<p>` holding a copy button and the value text.
+ * @param {import('@playwright/test').Locator} item
  */
 export async function readSideSheetItemValue(item) {
     const valueParagraph = item.locator('p').nth(1);
-    const spanText = (await valueParagraph.locator('span').last().textContent().catch(() => '') ?? '').trim();
-    if (isSideSheetValuePopulated(spanText)) {
-        return spanText;
+    if ((await valueParagraph.count()) === 0) {
+        return '';
     }
-    // Some builds render the value in a bare div (no span) after the copy button.
-    const stripped = (await valueParagraph.evaluate((el) => {
+    const text = await valueParagraph.evaluate((el) => {
         const clone = el.cloneNode(true);
-        clone.querySelectorAll('button, .copy-icon').forEach((n) => n.remove());
-        return (clone.textContent ?? '').trim();
-    }).catch(() => '')).trim();
-    if (isSideSheetValuePopulated(stripped)) {
-        return stripped;
-    }
-    const full = (await item.innerText().catch(() => '')).trim();
-    const lines = full.split('\n').map((l) => l.trim()).filter(Boolean);
-    return lines.slice(1).join(' ').trim();
+        clone.querySelectorAll('button, .copy-icon').forEach((node) => node.remove());
+        return clone.textContent ?? '';
+    });
+    return text.trim();
 }
 
 /**
- * Page object for the transaction details side sheet.
+ * Transaction details side sheet, opened by clicking a transactions grid row.
  */
 export class TransactionSideSheet {
     /**
-     * @param {import('@playwright/test').Locator} root - `.side-sheet__container`
+     * @param {import('@playwright/test').Page} page
      */
-    constructor(root) {
-        this.root = root;
-        this.content = root.locator('.side-sheet__content');
+    constructor(page) {
+        this.page = page;
+        this.grid = new TransactionsGrid(page);
+        this.root = page.locator('.side-sheet__container');
+        this.content = this.root.locator('.side-sheet__content');
+        this.dismissButton = this.root.locator('[data-id="dismiss-svg-icon"]');
     }
 
     /** Locator for a field row matched by its label `<p>` (hy/en). */
@@ -108,12 +70,37 @@ export class TransactionSideSheet {
         if (!labelPattern) {
             throw new Error(`Unknown side-sheet field "${fieldKey}". Known: ${Object.keys(SIDE_SHEET_FIELDS).join(', ')}`);
         }
-        // Match the label paragraph only — row-level hasText fails because the row
-        // also contains the value (e.g. "Ստեղծման ամսաթիվ\n01-02-2026 23:58").
+        // Match the label paragraph only: the row text also contains the value.
         return this.content
             .locator(ITEM)
-            .filter({ has: this.content.locator('p', { hasText: labelPattern }) })
+            .filter({ has: this.page.locator('p', { hasText: labelPattern }) })
             .first();
+    }
+
+    /**
+     * Opens the details of a grid row and waits until they have loaded.
+     * @param {number} [rowIndex]
+     */
+    async open(rowIndex = 0) {
+        const cell = this.grid.cell(GRID_COLUMNS.MERCHANT_NAME, rowIndex);
+        await expect(async () => {
+            await cell.click();
+            await expect(this.root).toBeVisible({ timeout: 5_000 });
+        }).toPass({ timeout: 30_000 });
+        await expect(this.content).toBeVisible();
+        await this.waitForDetails();
+        return this;
+    }
+
+    /** The sheet renders "null null" placeholders until the details request returns. */
+    async waitForDetails({ timeout = 30_000 } = {}) {
+        const creationDate = this.fieldItem('CREATION_DATE');
+        await expect
+            .poll(async () => isSideSheetValuePopulated(await readSideSheetItemValue(creationDate)), {
+                timeout,
+                message: 'Transaction details never populated (still empty / "null null").',
+            })
+            .toBe(true);
     }
 
     /**
@@ -132,7 +119,35 @@ export class TransactionSideSheet {
     }
 
     async dismiss() {
-        await this.root.locator('[data-id="dismiss-svg-icon"]').click();
+        await this.dismissButton.click();
         await expect(this.root).toBeHidden();
+    }
+
+    /**
+     * Opens grid rows top to bottom until one has every field in `fieldKeys` populated,
+     * then closes the sheet. Bounded by `budget` so it fails inside the test timeout.
+     * @param {(keyof typeof SIDE_SHEET_FIELDS)[]} fieldKeys
+     * @param {{ maxRows?: number, budget?: number }} [options]
+     * @returns {Promise<{ row: number, values: Record<string, string> }>}
+     */
+    async findRowWith(fieldKeys, { maxRows = 20, budget = 120_000 } = {}) {
+        const deadline = Date.now() + budget;
+        const rowCount = Math.min(await this.grid.rows.count(), maxRows);
+        let checked = 0;
+        for (let row = 0; row < rowCount && Date.now() < deadline; row++, checked++) {
+            await this.open(row);
+            const values = {};
+            for (const fieldKey of fieldKeys) {
+                values[fieldKey] = await readSideSheetItemValue(this.fieldItem(fieldKey));
+            }
+            await this.dismiss();
+            if (Object.values(values).every(isSideSheetValuePopulated)) {
+                return { row, values };
+            }
+        }
+        throw new Error(
+            `None of the first ${checked} transactions has ${fieldKeys.join(' + ')} populated `
+            + `(scan budget ${budget / 1000}s).`,
+        );
     }
 }
