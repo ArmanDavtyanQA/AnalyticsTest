@@ -1,6 +1,10 @@
 import { expect } from '@playwright/test';
 import testData from './testData.json' assert { type: 'json' };
 import { ReactCalendar } from './pages/components/reactCalendar.component.js';
+import {
+    TransactionsGrid,
+    GRID_COLUMNS,
+} from './pages/components/transactionsGrid.component.js';
 import { handleProfileVerification, isProfileVerificationRequired } from './pages/flows/profileVerification.flow.js';
 import {
     TransactionSideSheet,
@@ -11,6 +15,12 @@ import {
 } from './pages/components/transactionSideSheet.component.js';
 
 export { ReactCalendar, toCalendarInputDate } from './pages/components/reactCalendar.component.js';
+export {
+    TransactionsGrid,
+    GRID_COLUMNS,
+    parseGridAmount,
+    cardNumberSeed,
+} from './pages/components/transactionsGrid.component.js';
 export {
     TransactionSideSheet,
     SIDE_SHEET_FIELDS,
@@ -40,9 +50,14 @@ export const FILTER_LABELS = {
 export const wait = async (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 const TABLE_BODY_SELECTOR =
-    '.transactions-wrapper__listing table tbody, main table tbody, table tbody';
+    '.transactions-wrapper__listing .advanced-table table tbody, '
+    + '.transactions-wrapper__listing table tbody';
 const TABLE_SELECTOR =
-    '.transactions-wrapper__listing table, main table, table';
+    '.transactions-wrapper__listing .advanced-table, '
+    + '.transactions-wrapper__listing table';
+const TABLE_DATA_CELL =
+    '.transactions-wrapper__listing td[id$="_merchantName"] p, '
+    + '.transactions-wrapper__listing table tbody tr td p';
 // Localized "no results" copy. The empty state replaces <tbody> with a <div>
 // that contains this message when the API returns zero rows.
 const EMPTY_STATE_TEXT = /արդյունքներ չեն գտնվել|no results found|no data/i;
@@ -130,8 +145,23 @@ export const waitForGridToLoad = async (page, timeout = 90000, { allowEmpty = fa
                     return 'empty';
                 }
 
-                // Data state: <tbody> is visible AND all loading skeletons have
-                // resolved into real rows.
+                // Data state: a painted cell (stable id suffix) or tbody with no skeletons.
+                const paintedCell = await page
+                    .locator(`${TABLE_DATA_CELL} >> visible=true`)
+                    .first()
+                    .isVisible()
+                    .catch(() => false);
+                if (paintedCell) {
+                    const skeletons = await page
+                        .locator('.transactions-wrapper__listing .react-loading-skeleton:visible')
+                        .count()
+                        .catch(() => 0);
+                    if (skeletons === 0) {
+                        gridState = 'data';
+                        return 'data';
+                    }
+                }
+
                 const tableBody = page.locator(TABLE_BODY_SELECTOR).first();
                 const tbodyVisible = await tableBody.isVisible().catch(() => false);
                 if (tbodyVisible) {
@@ -325,14 +355,17 @@ export const openDetailsSideSheet = async (page, rowIndex = 0, { detailsTimeout 
 
     await waitForGridToLoad(page);
 
-    const tableBody = page.locator('.transactions-wrapper__listing table tbody');
-    const row = tableBody.locator('tr').nth(rowIndex);
-    await expect(row).toBeVisible({ timeout: 15000 });
+    const grid = new TransactionsGrid(page);
+    await expect(grid.row(rowIndex)).toBeVisible({ timeout: 15000 });
 
     const root = page.locator('.side-sheet__container');
-    for (const cellIndex of [0, 1, 4]) {
+    for (const columnKey of [
+        GRID_COLUMNS.MERCHANT_NAME,
+        GRID_COLUMNS.CREATION_DATE,
+        GRID_COLUMNS.POS_TYPE,
+    ]) {
         if (await root.isVisible().catch(() => false)) break;
-        await row.locator('td').nth(cellIndex).click({ timeout: 5_000 }).catch(() => { });
+        await grid.cell(columnKey, rowIndex).click({ timeout: 5_000 }).catch(() => { });
         const opened = await root
             .waitFor({ state: 'visible', timeout: 5_000 })
             .then(() => true)
@@ -531,16 +564,13 @@ export const getSideSheetFilterSeeds = async (
 };
 
 export const getMerchantNameFromGrid = async (page, rowIndex = 0) => {
-    const cell = page
-        .locator('.transactions-wrapper__listing table tbody tr')
-        .nth(rowIndex)
-        .locator('td')
-        .nth(1)
-        .locator('p');
-    await expect(cell).toBeVisible({ timeout: 15_000 });
-    const name = ((await cell.textContent()) || '').trim();
+    const name = await new TransactionsGrid(page).getText(GRID_COLUMNS.MERCHANT_NAME, rowIndex);
     expect(name, 'grid merchant name cell was empty').toBeTruthy();
     return name;
+};
+
+export const getGridCellText = async (page, columnKey, rowIndex = 0) => {
+    return new TransactionsGrid(page).getText(columnKey, rowIndex);
 };
 
 export const resetFilters = async (page) => {

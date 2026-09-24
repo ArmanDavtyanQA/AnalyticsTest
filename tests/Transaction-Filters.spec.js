@@ -4,7 +4,6 @@ import {
     openDetailsSideSheet,
     getSideSheetValue,
     getSideSheetFilterSeed,
-    getMerchantNameFromGrid,
     dismissSideSheet,
     resetFilters,
     selectFilterByLabel,
@@ -13,6 +12,9 @@ import {
     submitVisibleFilterPopup,
     fillVisibleCalendarRange,
     FILTER_LABELS,
+    TransactionsGrid,
+    GRID_COLUMNS,
+    cardNumberSeed,
 } from '../helpers.js';
 import { ReactCalendar } from '../pages/components/reactCalendar.component.js';
 import { filterDropdown } from '../utils/filters/filterDropdown.js';
@@ -35,12 +37,8 @@ test.describe('Filters', () => {
         const filterPopup = page.locator('.filter-popup.show');
         await expect(filterPopup).toBeHidden();
 
-        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
-        const tableCreationDateTD = tableBody.locator('tr:first-child td:nth-child(3) p');
-        await expect(tableBody).toBeVisible();
-        await expect(tableCreationDateTD).toBeVisible();
-
-        const txDateText = (await tableCreationDateTD.textContent()).trim();
+        const grid = new TransactionsGrid(page);
+        const txDateText = await grid.getText(GRID_COLUMNS.CREATION_DATE);
         const { startDate: startDateText, endDate: endDateText } = testData.creationDateFilters.standardRange;
         const txDate = parseDate(txDateText);
         const startDate = parseDate(startDateText);
@@ -57,12 +55,7 @@ test.describe('Filters', () => {
 
         await waitForGridToLoad(page);
 
-        const tableBody = page.locator('.transactions-wrapper__listing table tbody');
-        const tableCreationDateTD = tableBody.locator('tr:first-child td:nth-child(3) p');
-        await expect(tableBody).toBeVisible();
-        await expect(tableCreationDateTD).toBeVisible();
-
-        const txDateText = (await tableCreationDateTD.textContent()).trim();
+        const txDateText = await new TransactionsGrid(page).getText(GRID_COLUMNS.CREATION_DATE);
         expect(parseDate(txDateText).getTime()).toBeGreaterThanOrEqual(parseDate(dateConfig.startDate).getTime());
     });
 
@@ -101,36 +94,45 @@ test.describe('Filters', () => {
 
     test('Card number filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        await selectFilterByLabel(page, FILTER_LABELS.CARD_NUMBER);
-        const cardNumber = page.locator('.filter-popup__container .input [name="cardNumber"]');
-        await cardNumber.fill('0348');
+        const grid = new TransactionsGrid(page);
+        const { value: cardCell } = await grid.firstUsableValue(
+            GRID_COLUMNS.CARD_NUMBER,
+            { accept: (value) => Boolean(cardNumberSeed(value)) },
+        );
+        const lastFour = cardNumberSeed(cardCell);
 
-        const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
-        await expect(submitButton).toBeEnabled();
+        await selectFilterByLabel(page, FILTER_LABELS.CARD_NUMBER);
+        await page.locator('.filter-popup__container .input [name="cardNumber"]').fill(lastFour);
+
         await submitVisibleFilterPopup(page);
 
-        const tableCardNumberTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(4) p');
-        await expect(tableCardNumberTD).toBeVisible();
+        const filteredCard = await new TransactionsGrid(page).getText(GRID_COLUMNS.CARD_NUMBER);
+        expect(filteredCard.replace(/\D/g, '')).toContain(lastFour);
     });
 
     test('Exact amount filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        await selectFilterByLabel(page, FILTER_LABELS.AMOUNT);
-        const amount = page.locator('.filter-popup__container .input [name="amountStartRange"]');
-        await amount.fill('100');
+        const grid = new TransactionsGrid(page);
+        const seedAmount = await grid.getAmount();
+        expect(seedAmount, 'grid amount cell was not numeric').toBeGreaterThan(0);
 
-        const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
-        await expect(submitButton).toBeEnabled();
+        await selectFilterByLabel(page, FILTER_LABELS.AMOUNT);
+        await page.locator('.filter-popup__container .input [name="amountStartRange"]').fill(String(seedAmount));
+
         await submitVisibleFilterPopup(page);
 
-        const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
-        await expect(tableAmountTD).toBeVisible();
-        const amountValue = parseFloat(((await tableAmountTD.textContent()) || '').trim());
-        expect(amountValue).toBeGreaterThanOrEqual(100);
+        const filteredAmount = await new TransactionsGrid(page).getAmount();
+        expect(filteredAmount).toBeGreaterThanOrEqual(seedAmount);
     });
 
     test('Amount range filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
+        const grid = new TransactionsGrid(page);
+        const seedAmount = await grid.getAmount();
+        expect(seedAmount, 'grid amount cell was not numeric').toBeGreaterThan(0);
+        const low = Math.max(0, Math.floor(seedAmount) - 10);
+        const high = Math.ceil(seedAmount) + 10;
+
         await selectFilterByLabel(page, FILTER_LABELS.AMOUNT);
 
         const filterPopupVisible = page.locator('.filter-popup:visible');
@@ -138,18 +140,14 @@ test.describe('Filters', () => {
         await expect(amountSwitcher).toBeVisible();
         await amountSwitcher.click();
 
-        await page.locator('.filter-popup__container .input [name="amountStartRange"]').fill('50');
-        await page.locator('.filter-popup__container .input [name="amountEndRange"]').fill('150');
+        await page.locator('.filter-popup__container .input [name="amountStartRange"]').fill(String(low));
+        await page.locator('.filter-popup__container .input [name="amountEndRange"]').fill(String(high));
 
-        const submitButton = page.locator('.filter-popup:visible .filter-popup__footer button[type="submit"]');
-        await expect(submitButton).toBeEnabled();
         await submitVisibleFilterPopup(page);
 
-        const tableAmountTD = page.locator('.transactions-wrapper__listing table tbody tr:first-child td:nth-child(5) p');
-        await expect(tableAmountTD).toBeVisible();
-        const amountValue = parseFloat(((await tableAmountTD.textContent()) || '').trim());
-        expect(amountValue).toBeGreaterThanOrEqual(50);
-        expect(amountValue).toBeLessThanOrEqual(150);
+        const filteredAmount = await new TransactionsGrid(page).getAmount();
+        expect(filteredAmount).toBeGreaterThanOrEqual(low);
+        expect(filteredAmount).toBeLessThanOrEqual(high);
     });
 
     test('Authorization Code UniqueID', async ({ page }) => {
@@ -222,16 +220,15 @@ test.describe('Filters', () => {
 
     test('Terminal ID filter', async ({ page }) => {
         await creationDateFilterRange(page, 'recentRange');
-        const terminalIdValue = await getSideSheetFilterSeed(page, 'TERMINAL_ID');
+        const grid = new TransactionsGrid(page);
+        const { value: terminalIdValue } = await grid.firstUsableValue(GRID_COLUMNS.TERMINAL_ID);
 
         await selectFilterByLabel(page, FILTER_LABELS.TERMINAL_ID);
         await filterDropdown(page, terminalIdValue);
 
         await waitForGridToLoad(page);
 
-        const filteredSideSheet = await openDetailsSideSheet(page);
-        expect(await getSideSheetValue(filteredSideSheet, 'TERMINAL_ID')).toBe(terminalIdValue);
-        await dismissSideSheet(filteredSideSheet);
+        expect(await new TransactionsGrid(page).getText(GRID_COLUMNS.TERMINAL_ID)).toBe(terminalIdValue);
     });
 
     test('Serial number filter', async ({ page }) => {
@@ -250,31 +247,27 @@ test.describe('Filters', () => {
 
     test('Merchant name filter', async ({ page }) => {
         await creationDateFilterRange(page, 'recentRange');
-        const merchantNameValue = await getMerchantNameFromGrid(page);
+        const grid = new TransactionsGrid(page);
+        const { value: merchantNameValue } = await grid.firstUsableValue(GRID_COLUMNS.MERCHANT_NAME);
 
         await selectFilterByLabel(page, FILTER_LABELS.MERCHANT_NAME);
         await filterDropdown(page, merchantNameValue);
 
         await waitForGridToLoad(page);
 
-        const filteredSideSheet = await openDetailsSideSheet(page);
-        expect(await getMerchantNameFromGrid(page)).toBe(merchantNameValue);
-        await dismissSideSheet(filteredSideSheet);
+        expect(await new TransactionsGrid(page).getText(GRID_COLUMNS.MERCHANT_NAME)).toBe(merchantNameValue);
     });
 
     test('Address filter', async ({ page }) => {
         await creationDateFilterRange(page, 'recentRange');
-        const addressValue = await getSideSheetFilterSeed(page, 'ADDRESS');
+        const grid = new TransactionsGrid(page);
+        const { value: addressValue } = await grid.firstUsableValue(GRID_COLUMNS.ADDRESS);
 
         await selectFilterByLabel(page, FILTER_LABELS.ADDRESS);
         await filterDropdown(page, addressValue);
 
         await waitForGridToLoad(page);
 
-        const filteredSideSheet = await openDetailsSideSheet(page);
-        expect(await getSideSheetValue(filteredSideSheet, 'ADDRESS')).toBe(addressValue);
-        await dismissSideSheet(filteredSideSheet);
+        expect(await new TransactionsGrid(page).getText(GRID_COLUMNS.ADDRESS)).toBe(addressValue);
     });
-
-
 });
