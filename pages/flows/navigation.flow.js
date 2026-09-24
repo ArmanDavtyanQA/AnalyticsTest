@@ -2,6 +2,7 @@ import { expect } from '@playwright/test';
 import { Sidebar } from '../components/sidebar.component.js';
 import { waitForGridToLoad, waitForReportsGridToLoad } from '../../helpers.js';
 import { ROUTES } from './auth.flow.js';
+import { handleProfileVerification } from './profileVerification.flow.js';
 
 /**
  * Lands on the dashboard page assuming the user is already authenticated via storageState.
@@ -60,6 +61,7 @@ export async function goToTransactions(page) {
         }
     }
     await collapseSidebar(page);
+    await handleProfileVerification(page);
     await waitForGridToLoad(page, 90000, { allowEmpty: true });
 }
 
@@ -88,8 +90,9 @@ export async function goToReports(page) {
         }
     }
     await collapseSidebar(page);
+    await handleProfileVerification(page);
     await waitForReportsGridToLoad(page);
-    await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^(Ստեղծել|Create)$/ })).toBeVisible();
 }
 
 /**
@@ -103,5 +106,25 @@ export async function goToArchivedReports(page) {
     }
     await expect(page).toHaveURL(new RegExp(`${ROUTES.reportsArchive}$`));
     await collapseSidebar(page);
+    await handleProfileVerification(page);
     await waitForReportsGridToLoad(page);
+}
+
+/**
+ * Navigates to the Analytics page and waits until the lock screen (if any) is gone.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function goToAnalytics(page) {
+    if (!page.url().includes(ROUTES.analytics)) {
+        await page.goto(ROUTES.analytics, { waitUntil: 'domcontentloaded' });
+        if (!page.url().includes(ROUTES.analytics)) {
+            await goToDashboard(page);
+            const sidebar = new Sidebar(page);
+            await sidebar.navigateByHref(ROUTES.analytics);
+            await page.waitForURL(new RegExp(`${ROUTES.analytics}$`));
+        }
+    }
+    await collapseSidebar(page);
+    await handleProfileVerification(page);
 }

@@ -3,12 +3,18 @@ import {
     creationDateFilterRange,
     openDetailsSideSheet,
     getSideSheetValue,
+    getSideSheetFilterSeed,
+    getMerchantNameFromGrid,
+    dismissSideSheet,
     resetFilters,
     selectFilterByLabel,
     parseDate,
     waitForGridToLoad,
     submitVisibleFilterPopup,
+    fillVisibleCalendarRange,
+    FILTER_LABELS,
 } from '../helpers.js';
+import { ReactCalendar } from '../pages/components/reactCalendar.component.js';
 import { filterDropdown } from '../utils/filters/filterDropdown.js';
 import { goToTransactions } from '../pages/flows/navigation.flow.js';
 import { ROUTES } from '../pages/flows/auth.flow.js';
@@ -44,29 +50,11 @@ test.describe('Filters', () => {
     });
 
     test('Creation date filter with exact date', async ({ page }) => {
-        const creationDateFilter = page.locator('.filter-chip[data-filter-id="creationDate"]');
-        await expect(creationDateFilter).toBeVisible();
-        await creationDateFilter.click();
-
-        const filterPopup = page.locator('.filter-popup.show');
-        await expect(filterPopup).toBeVisible();
-
-        const switcher = filterPopup.locator('.filter-popup__container .switcher').first();
-        await expect(switcher).toBeVisible();
-        await switcher.click();
-
-        const transactionEndDateInput = page.locator('input[name="trasnactionEndDate"]');
-        await expect(transactionEndDateInput).toBeHidden();
-        const transactionStartDateInput = page.locator('input[name="transactionStartDate"]');
-        await expect(transactionStartDateInput).toBeVisible();
-
+        const calendar = await ReactCalendar.openFromChip(page, 'creationDate');
         const dateConfig = testData.creationDateFilters.exactDate;
-        await transactionStartDateInput.fill(dateConfig.startDate);
-        await transactionStartDateInput.press('Enter');
-        await expect(filterPopup).toBeHidden();
+        await calendar.setExact(dateConfig.startDate);
+        await calendar.apply();
 
-        // Wait for the filtered grid to actually reload before reading a row,
-        // otherwise we race against skeletons (or a not-yet-rendered row).
         await waitForGridToLoad(page);
 
         const tableBody = page.locator('.transactions-wrapper__listing table tbody');
@@ -75,86 +63,45 @@ test.describe('Filters', () => {
         await expect(tableCreationDateTD).toBeVisible();
 
         const txDateText = (await tableCreationDateTD.textContent()).trim();
-        const startDateText = await transactionStartDateInput.inputValue();
-        expect(parseDate(txDateText).getTime()).toBeGreaterThanOrEqual(parseDate(startDateText).getTime());
+        expect(parseDate(txDateText).getTime()).toBeGreaterThanOrEqual(parseDate(dateConfig.startDate).getTime());
     });
 
     test('Settlement date filter with exact date', async ({ page }) => {
         await creationDateFilterRange(page, 'recentRange');
-        const sideSheet = await openDetailsSideSheet(page);
-        const settlementDateValue = await getSideSheetValue(sideSheet, 1, 3);
-        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(sideSheet).toBeHidden();
-
-        await selectFilterByLabel(page, 'Հաշվանցման ամսաթիվ');
+        const settlementDateValue = await getSideSheetFilterSeed(page, 'SETTLEMENT_DATE');
+        await selectFilterByLabel(page, FILTER_LABELS.SETTLEMENT_DATE);
         const dateOnly = settlementDateValue.split(' ')[0];
-        const filterPopup = page.locator('.filter-popup:visible, .filter-popup.show').first();
-        await expect(filterPopup).toBeVisible();
-
-        const settlementStartDate = filterPopup.locator('input[name*="tartDate"]').first();
-        const settlementEndDate = filterPopup.locator('input[name*="ndDate"]').first();
-        const switcher = filterPopup.locator('.switcher').first();
-        if (await switcher.isVisible() && await settlementStartDate.isHidden()) {
-            await switcher.click();
-            await expect(settlementStartDate).toBeVisible();
-        }
-        await expect(settlementStartDate).toBeVisible();
-        await settlementStartDate.fill(dateOnly);
-        if (await settlementEndDate.isVisible()) {
-            await settlementEndDate.fill(dateOnly);
-        }
-
-        const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
-        await expect(submitButton).toBeVisible();
-        await submitButton.click();
-
+        const { calendar } = await fillVisibleCalendarRange(page, dateOnly, dateOnly, {
+            chipText: FILTER_LABELS.SETTLEMENT_DATE,
+        });
+        await calendar.apply();
         await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
-        const settlementDateActualValue = await getSideSheetValue(filteredSideSheet, 1, 3);
-        expect(settlementDateActualValue).toBe(settlementDateValue);
-        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(filteredSideSheet).toBeHidden();
+        expect(await getSideSheetValue(filteredSideSheet, 'SETTLEMENT_DATE')).toBe(settlementDateValue);
+        await dismissSideSheet(filteredSideSheet);
     });
 
     test('Settlement date filter with date range', async ({ page }) => {
         await creationDateFilterRange(page, 'recentRange');
-        const sideSheet = await openDetailsSideSheet(page);
-        const settlementDateValue = await getSideSheetValue(sideSheet, 1, 3);
-        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(sideSheet).toBeHidden();
-
-        await selectFilterByLabel(page, 'Հաշվանցման ամսաթիվ');
+        const settlementDateValue = await getSideSheetFilterSeed(page, 'SETTLEMENT_DATE');
+        await selectFilterByLabel(page, FILTER_LABELS.SETTLEMENT_DATE);
         const dateOnly = settlementDateValue.split(' ')[0];
-        const filterPopup = page.locator('.filter-popup:visible, .filter-popup.show').first();
-        await expect(filterPopup).toBeVisible();
-
-        const settlementStartDate = filterPopup.locator('input[name*="tartDate"]').first();
-        const settlementEndDate = filterPopup.locator('input[name*="ndDate"]').first();
-        const switcher = filterPopup.locator('.switcher').first();
-        await switcher.click();
-        await expect(settlementStartDate).toBeVisible();
-        await settlementStartDate.fill(dateOnly);
-        if (await settlementEndDate.isVisible()) {
-            await settlementEndDate.fill(dateOnly);
-        }
-
-        const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
-        await expect(submitButton).toBeVisible();
-        await submitButton.click();
-
+        const { calendar } = await fillVisibleCalendarRange(page, dateOnly, dateOnly, {
+            forceRange: true,
+            chipText: FILTER_LABELS.SETTLEMENT_DATE,
+        });
+        await calendar.apply();
         await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
-        const settlementDateActualValue = await getSideSheetValue(filteredSideSheet, 1, 3);
-        expect(settlementDateActualValue).toBe(settlementDateValue);
-        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(filteredSideSheet).toBeHidden();
+        expect(await getSideSheetValue(filteredSideSheet, 'SETTLEMENT_DATE')).toBe(settlementDateValue);
+        await dismissSideSheet(filteredSideSheet);
     });
 
     test('Card number filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        await selectFilterByLabel(page, 'Քարտի համար');
+        await selectFilterByLabel(page, FILTER_LABELS.CARD_NUMBER);
         const cardNumber = page.locator('.filter-popup__container .input [name="cardNumber"]');
         await cardNumber.fill('0348');
 
@@ -168,7 +115,7 @@ test.describe('Filters', () => {
 
     test('Exact amount filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        await selectFilterByLabel(page, 'Գումար');
+        await selectFilterByLabel(page, FILTER_LABELS.AMOUNT);
         const amount = page.locator('.filter-popup__container .input [name="amountStartRange"]');
         await amount.fill('100');
 
@@ -184,10 +131,10 @@ test.describe('Filters', () => {
 
     test('Amount range filter', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        await selectFilterByLabel(page, 'Գումար');
+        await selectFilterByLabel(page, FILTER_LABELS.AMOUNT);
 
         const filterPopupVisible = page.locator('.filter-popup:visible');
-        const amountSwitcher = filterPopupVisible.locator('.filter-popup__container .switcher').first();
+        const amountSwitcher = filterPopupVisible.locator('.switcher, .controller--switch').first();
         await expect(amountSwitcher).toBeVisible();
         await amountSwitcher.click();
 
@@ -207,7 +154,7 @@ test.describe('Filters', () => {
 
     test('Authorization Code UniqueID', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        await selectFilterByLabel(page, 'Ունիկալ ID');
+        await selectFilterByLabel(page, FILTER_LABELS.UNIQUE_ID);
         await page.locator('.unique-id-filter__col .select__input').click();
         const authCodeOption = page.locator('.select__options .select__option').filter({ hasText: 'Authorization Code' });
         await expect(authCodeOption).toBeVisible();
@@ -219,12 +166,12 @@ test.describe('Filters', () => {
         await submitButton.click();
 
         const sideSheet = await openDetailsSideSheet(page);
-        expect(await getSideSheetValue(sideSheet, 'DETAILS_CARD', 'AUTHORIZATION_CODE')).toBe('937065');
+        expect(await getSideSheetValue(sideSheet, 'AUTHORIZATION_CODE')).toBe('937065');
     });
 
     test('RRN 1 UniqueID', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        await selectFilterByLabel(page, 'Ունիկալ ID');
+        await selectFilterByLabel(page, FILTER_LABELS.UNIQUE_ID);
         await page.locator('.unique-id-filter__col .select__input').click();
         const rrn1Option = page.locator('.select__options .select__option').filter({ hasText: 'RRN 1' });
         await expect(rrn1Option).toBeVisible();
@@ -236,12 +183,12 @@ test.describe('Filters', () => {
         await submitButton.click();
 
         const sideSheet = await openDetailsSideSheet(page, 0);
-        expect(await getSideSheetValue(sideSheet, 'DETAILS_CARD', 'RRN_1')).toBe('603219937057');
+        expect(await getSideSheetValue(sideSheet, 'RRN_1')).toBe('603219937057');
     });
 
     test('RRN 2 UniqueID', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        await selectFilterByLabel(page, 'Ունիկալ ID');
+        await selectFilterByLabel(page, FILTER_LABELS.UNIQUE_ID);
         await page.locator('.unique-id-filter__col .select__input').click();
         const rrn2Option = page.locator('.select__options .select__option').filter({ hasText: 'RRN 2' });
         await expect(rrn2Option).toBeVisible();
@@ -253,12 +200,12 @@ test.describe('Filters', () => {
         await submitButton.click();
 
         const sideSheet = await openDetailsSideSheet(page);
-        expect(await getSideSheetValue(sideSheet, 'DETAILS_CARD', 'RRN_2')).toBe('128685432785');
+        expect(await getSideSheetValue(sideSheet, 'RRN_2')).toBe('128685432785');
     });
 
     test('RRN 3 UniqueID', async ({ page }) => {
         await creationDateFilterRange(page, 'standardRange');
-        await selectFilterByLabel(page, 'Ունիկալ ID');
+        await selectFilterByLabel(page, FILTER_LABELS.UNIQUE_ID);
         await page.locator('.unique-id-filter__col .select__input').click();
         const rrn3Option = page.locator('.select__options .select__option').filter({ hasText: 'RRN 3' });
         await expect(rrn3Option).toBeVisible();
@@ -270,82 +217,63 @@ test.describe('Filters', () => {
         await submitButton.click();
 
         const sideSheet = await openDetailsSideSheet(page);
-        expect(await getSideSheetValue(sideSheet, 'DETAILS_CARD', 'RRN_3')).toBe('8255937065');
+        expect(await getSideSheetValue(sideSheet, 'RRN_3')).toBe('8255937065');
     });
 
     test('Terminal ID filter', async ({ page }) => {
         await creationDateFilterRange(page, 'recentRange');
-        const sideSheet = await openDetailsSideSheet(page);
-        const terminalIdValue = await getSideSheetValue(sideSheet, 1, 1);
-        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(sideSheet).toBeHidden();
+        const terminalIdValue = await getSideSheetFilterSeed(page, 'TERMINAL_ID');
 
-        await selectFilterByLabel(page, 'Տերմինալ ID');
+        await selectFilterByLabel(page, FILTER_LABELS.TERMINAL_ID);
         await filterDropdown(page, terminalIdValue);
 
         await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
-        expect(await getSideSheetValue(filteredSideSheet, 1, 1)).toBe(terminalIdValue);
-        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(filteredSideSheet).toBeHidden();
+        expect(await getSideSheetValue(filteredSideSheet, 'TERMINAL_ID')).toBe(terminalIdValue);
+        await dismissSideSheet(filteredSideSheet);
     });
 
     test('Serial number filter', async ({ page }) => {
         await creationDateFilterRange(page, 'recentRange');
-        const sideSheet = await openDetailsSideSheet(page);
-        const serialNumberValue = await getSideSheetValue(sideSheet, 4, 1);
-        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(sideSheet).toBeHidden();
+        const serialNumberValue = await getSideSheetFilterSeed(page, 'SERIAL_NUMBER');
 
-        await selectFilterByLabel(page, 'Սերիական համար');
+        await selectFilterByLabel(page, FILTER_LABELS.SERIAL_NUMBER);
         await filterDropdown(page, serialNumberValue);
 
         await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
-        expect(await getSideSheetValue(filteredSideSheet, 4, 1)).toBe(serialNumberValue);
-        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(filteredSideSheet).toBeHidden();
+        expect(await getSideSheetValue(filteredSideSheet, 'SERIAL_NUMBER')).toBe(serialNumberValue);
+        await dismissSideSheet(filteredSideSheet);
     });
 
     test('Merchant name filter', async ({ page }) => {
         await creationDateFilterRange(page, 'recentRange');
-        const sideSheet = await openDetailsSideSheet(page);
-        const merchantNameValue = ((await page
-            .locator('.side-sheet__container .side-sheet__header .side-sheet__title')
-            .textContent()) || '').trim();
-        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(sideSheet).toBeHidden();
+        const merchantNameValue = await getMerchantNameFromGrid(page);
 
-        await selectFilterByLabel(page, 'ԱՍԿ անվանում');
+        await selectFilterByLabel(page, FILTER_LABELS.MERCHANT_NAME);
         await filterDropdown(page, merchantNameValue);
 
         await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
-        const merchantNameActualValue = ((await filteredSideSheet.locator('.side-sheet__title').textContent()) || '').trim();
-        expect(merchantNameActualValue).toBe(merchantNameValue);
-        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(filteredSideSheet).toBeHidden();
+        expect(await getMerchantNameFromGrid(page)).toBe(merchantNameValue);
+        await dismissSideSheet(filteredSideSheet);
     });
 
     test('Address filter', async ({ page }) => {
         await creationDateFilterRange(page, 'recentRange');
-        const sideSheet = await openDetailsSideSheet(page);
-        const addressValue = await getSideSheetValue(sideSheet, 3, 2);
-        await sideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(sideSheet).toBeHidden();
+        const addressValue = await getSideSheetFilterSeed(page, 'ADDRESS');
 
-        await selectFilterByLabel(page, 'Հասցե');
+        await selectFilterByLabel(page, FILTER_LABELS.ADDRESS);
         await filterDropdown(page, addressValue);
 
         await waitForGridToLoad(page);
 
         const filteredSideSheet = await openDetailsSideSheet(page);
-        expect(await getSideSheetValue(filteredSideSheet, 3, 2)).toBe(addressValue);
-        await filteredSideSheet.locator('[data-id="dismiss-svg-icon"]').click();
-        await expect(filteredSideSheet).toBeHidden();
+        expect(await getSideSheetValue(filteredSideSheet, 'ADDRESS')).toBe(addressValue);
+        await dismissSideSheet(filteredSideSheet);
     });
 
 

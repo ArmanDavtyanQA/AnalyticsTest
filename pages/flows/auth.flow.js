@@ -6,14 +6,62 @@ export const ROUTES = {
     transactions: '/dashboard/transactions-reports',
     reports: '/dashboard/transactions-reports-builder',
     reportsArchive: '/dashboard/transactions-reports-builder-archive',
+    analytics: '/dashboard/transactions-analytics',
     otp: '/otp-verification-required',
 };
 
-const TEST_USER = {
+export const TEST_USER = {
     email: process.env.E2E_USER_EMAIL || 'trfsucity@mailinator.com',
     password: process.env.E2E_USER_PASSWORD || 'Arpine.123',
     otp: (process.env.E2E_OTP_CODE || '123456').split(''),
 };
+
+/**
+ * Fills the in-app "Enter the code" modal (`.enter-verificationCode` / `.otp`)
+ * or the login OTP page. Uses {@link TEST_USER.otp} (`E2E_OTP_CODE`, default `123456`).
+ *
+ * @returns {Promise<boolean>} true when inputs were found and filled
+ */
+export async function fillOtp(page, { timeout = 15_000 } = {}) {
+    const codeModal = page.locator('.modal__container').filter({
+        has: page.locator('.enter-verificationCode, .otp, [data-id="enter-verification-code-phone"]'),
+    }).first();
+    const modalVisible = await codeModal
+        .waitFor({ state: 'visible', timeout })
+        .then(() => true)
+        .catch(() => false);
+
+    let otpInputs;
+    if (modalVisible) {
+        otpInputs = codeModal.locator('.otp input[type="text"], .VerificationCode input[type="text"]');
+    } else if (page.url().includes(ROUTES.otp)) {
+        otpInputs = page.locator('input:not([readonly])');
+    } else {
+        return false;
+    }
+
+    await expect(otpInputs.first()).toBeVisible({ timeout: 10_000 });
+    await expect(otpInputs.first()).toBeEditable({ timeout: 5_000 });
+
+    const digits = TEST_USER.otp;
+    const count = await otpInputs.count();
+    for (let i = 0; i < Math.min(count, digits.length); i++) {
+        await otpInputs.nth(i).click();
+        await otpInputs.nth(i).fill(digits[i]);
+    }
+
+    const continueButton = (modalVisible ? codeModal : page)
+        .locator('[data-id="enter-verification-code-continue-button"]')
+        .or(page.getByRole('button', { name: /^(Continue|Շարունակել)$/i }))
+        .first();
+    await expect(continueButton).toBeVisible({ timeout: 10_000 });
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
+    if (modalVisible) {
+        await expect(codeModal).toBeHidden({ timeout: 20_000 });
+    }
+    return true;
+}
 
 const EMAIL_SELECTOR = [
     'input[data-id="login-email-input"]',
@@ -104,13 +152,10 @@ export async function login(page) {
     );
 
     if (page.url().includes(ROUTES.otp)) {
-        const otpInputs = page.locator('input:not([readonly])');
-        await expect(otpInputs.first()).toBeEditable();
-        const count = await otpInputs.count();
-        for (let i = 0; i < Math.min(count, TEST_USER.otp.length); i++) {
-            await otpInputs.nth(i).fill(TEST_USER.otp[i]);
+        const filled = await fillOtp(page, { timeout: 20_000 });
+        if (!filled) {
+            throw new Error('OTP page loaded but verification-code inputs were not found.');
         }
-        await page.getByTestId('enter-verification-code-continue-button').click();
     }
 
     await expect(page).toHaveURL(new RegExp(`${ROUTES.dashboard}$`));

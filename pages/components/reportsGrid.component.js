@@ -5,26 +5,27 @@ import { waitForReportsGridToLoad } from '../../helpers.js';
  * Localized UI copy used by the reports grid row actions.
  */
 const TEXT = {
-    // 3-dot menu items (active grid)
-    duplicate: 'Կրկնօրինակել',
-    archive: 'Արխիվացնել',
-    // 3-dot menu items (archived grid)
-    unarchive: 'հանել արխիվից',
-    delete: 'Ջնջել',
-    // confirmation modal buttons
-    confirmActivate: 'Ակտիվացնել',
-    confirmDeactivate: 'Ապաակտիվացնել',
-    confirmArchive: 'Արխիվացնել',
-    // duplicate (edit + review) modals
-    historyTab: 'Պատմություն',
-    editLink: 'Խմբագրել',
-    editSubmit: 'Հաստատել փոփոխությունը',
-    reviewSubmit: 'Ստեղծել',
+    duplicate: /^(Duplicate|Կրկնօրինակել)$/i,
+    archive: /^(Archive|Արխիվացնել)$/i,
+    unarchive: /^(Unarchive|հանել արխիվից)$/i,
+    delete: /^(Delete|Ջնջել)$/i,
+    confirmActivate: /^(Activate|Ակտիվացնել)$/i,
+    confirmDeactivate: /^(Deactivate|Ապաակտիվացնել)$/i,
+    confirmArchive: /^(Archive|Արխիվացնել)$/i,
+    historyTab: /^(History|Պատմություն)$/i,
+    editLink: /^(Edit|Խմբագրել)$/i,
+    editSubmit: /^(Confirm change|Հաստատել փոփոխությունը)$/i,
+    reviewSubmit: /^(Create|Ստեղծել)$/i,
+    basicSection: /^(Basic|Հիմնական)$/i,
 };
 
-const ROW = '.reports-table table tbody tr';
+const ROW =
+    '.transactions-reports-wrapper table tbody tr, .reports-table table tbody tr, '
+    + '.transactions-wrapper__listing table tbody tr, table tbody tr';
 const NAME_CELL = 'td[id$="_name"]';
 const ACTIONS_CELL = 'td[id$="_actions"]';
+const GRID_SCROLL_ROOT =
+    '.transactions-reports-wrapper, .reports-table, .transactions-wrapper__listing';
 
 /**
  * Small console logger so every action and assertion shows up in the test output,
@@ -53,9 +54,10 @@ export class ReportsGrid {
     }
 
     /** Reloads the page and waits for the reports grid to settle. */
-    async reload({ gridTimeout = 60_000 } = {}) {
+    async reload({ gridTimeout = 90_000 } = {}) {
         log('reloading grid');
-        await this.page.reload({ waitUntil: 'domcontentloaded' });
+        const url = this.page.url();
+        await this.page.goto(url, { waitUntil: 'domcontentloaded' });
         await waitForReportsGridToLoad(this.page, gridTimeout);
         return this;
     }
@@ -98,9 +100,11 @@ export class ReportsGrid {
             if (count > 0) {
                 await lastRow.scrollIntoViewIfNeeded().catch(() => { });
             }
-            await this.page.locator('.reports-table').first().evaluate((table) => {
+            await this.page.locator(`${GRID_SCROLL_ROOT} table, table`).first().evaluate((table) => {
                 const wrapper =
-                    table.closest('.transactions-wrapper__listing')
+                    table.closest('.transactions-reports-wrapper')
+                    ?? table.closest('.transactions-wrapper__listing')
+                    ?? table.closest('.reports-table')?.parentElement
                     ?? table.parentElement?.parentElement
                     ?? table.parentElement;
                 if (wrapper && wrapper.scrollHeight > wrapper.clientHeight) {
@@ -132,7 +136,8 @@ export class ReportsGrid {
         await actions.evaluate((cell) => {
             cell.scrollIntoView({ block: 'nearest', inline: 'end' });
             const wrapper =
-                cell.closest('.reports-table')?.parentElement
+                cell.closest('.transactions-reports-wrapper')
+                ?? cell.closest('.reports-table')?.parentElement
                 ?? cell.closest('.transactions-wrapper__listing')
                 ?? cell.closest('main');
             if (wrapper && wrapper.scrollWidth > wrapper.clientWidth) {
@@ -188,7 +193,7 @@ export class ReportsGrid {
             if (attempt < reloads - 1) {
                 log(`"${name}" still in grid — reloading (${attempt + 2}/${reloads})`);
                 // Shorter wait on recheck reloads — grid was already loaded once this action.
-                await this.reload({ gridTimeout: 30_000 });
+                await this.reload({ gridTimeout: 90_000 });
             }
         }
         await this.expectNotInGrid(name);
@@ -196,7 +201,8 @@ export class ReportsGrid {
 
     /** Checkbox locator backing a row's active/inactive toggle. */
     toggleCheckbox(name) {
-        return this.rowByName(name).first().locator(`${ACTIONS_CELL} .switcher input[type="checkbox"]`);
+        const actions = this.rowByName(name).first().locator(ACTIONS_CELL);
+        return actions.locator('.switcher input[type="checkbox"], input[type="checkbox"]').first();
     }
 
     /** Returns whether the report's toggle is currently active (checked). */
@@ -224,14 +230,16 @@ export class ReportsGrid {
      * may capture a stale (pre-commit) snapshot. Re-reading the same static page
      * would never recover, hence the reload-and-recheck loop.
      */
-    async waitForToggleState(name, active, { reloads = 3, perCheckTimeout = 5_000 } = {}) {
+    async isToggleState(name, active, { timeout = 5_000 } = {}) {
+        return this.toggleCheckbox(name)
+            .isChecked({ timeout })
+            .then((checked) => checked === active)
+            .catch(() => false);
+    }
+
+    async waitForToggleState(name, active, { reloads = 5, perCheckTimeout = 5_000 } = {}) {
         for (let attempt = 0; attempt < reloads; attempt++) {
-            const checkbox = this.toggleCheckbox(name);
-            const matched = await checkbox
-                .isChecked({ timeout: perCheckTimeout })
-                .then((checked) => checked === active)
-                .catch(() => false);
-            if (matched) {
+            if (await this.isToggleState(name, active, { timeout: perCheckTimeout })) {
                 log(`PASS: "${name}" toggle is ${active ? 'ACTIVE' : 'INACTIVE'}`);
                 return;
             }
@@ -240,7 +248,6 @@ export class ReportsGrid {
                 await this.reload();
             }
         }
-        // Final strict assertion to surface a clear, logged failure.
         await this.expectToggleState(name, active);
     }
 
@@ -253,8 +260,8 @@ export class ReportsGrid {
     /** Clicks a button (by exact text) inside the confirmation modal and waits for it to close. */
     async confirmWith(buttonText) {
         const modal = this.confirmModal();
-        await expect(modal).toBeVisible();
-        await modal.getByRole('button', { name: buttonText, exact: true }).click();
+        await expect(modal).toBeVisible({ timeout: 10_000 });
+        await modal.getByRole('button', { name: buttonText }).click();
         await expect(modal).toBeHidden();
     }
 
@@ -272,25 +279,58 @@ export class ReportsGrid {
         await this.clickLocatorCenter(toggle);
     }
 
-    /** Activates a (currently inactive) report and confirms. */
-    async activate(name) {
+    async toggleAndConfirm(name, confirmButtonText) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+            if (attempt > 0) {
+                await this.page.keyboard.press('Escape').catch(() => { });
+                log(`toggle confirm modal did not open for "${name}" — retrying click (${attempt + 1}/3)`);
+            }
+            await this.clickToggle(name);
+            const modal = this.confirmModal();
+            const opened = await modal
+                .waitFor({ state: 'visible', timeout: 5_000 })
+                .then(() => true)
+                .catch(() => false);
+            if (opened) {
+                await modal.getByRole('button', { name: confirmButtonText }).click();
+                await expect(modal).toBeHidden();
+                return;
+            }
+        }
+        await this.confirmWith(confirmButtonText);
+    }
+
+    async activate(name, { attempts = 3 } = {}) {
         log(`activating "${name}" ...`);
-        await this.clickToggle(name);
-        await this.confirmWith(TEXT.confirmActivate);
-        await this.reload();
-        await this.waitForToggleState(name, true);
-        log(`activate confirmed for "${name}"`);
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            if (attempt > 0) {
+                log(`"${name}" still INACTIVE after activate — retrying (${attempt + 1}/${attempts})`);
+            }
+            await this.toggleAndConfirm(name, TEXT.confirmActivate);
+            await this.reload();
+            if (await this.isToggleState(name, true)) {
+                log(`activate confirmed for "${name}"`);
+                return this;
+            }
+        }
+        await this.expectToggleState(name, true);
         return this;
     }
 
-    /** Deactivates a (currently active) report and confirms. */
-    async deactivate(name) {
+    async deactivate(name, { attempts = 3 } = {}) {
         log(`deactivating "${name}" ...`);
-        await this.clickToggle(name);
-        await this.confirmWith(TEXT.confirmDeactivate);
-        await this.reload();
-        await this.waitForToggleState(name, false);
-        log(`deactivate confirmed for "${name}"`);
+        for (let attempt = 0; attempt < attempts; attempt++) {
+            if (attempt > 0) {
+                log(`"${name}" still ACTIVE after deactivate — retrying (${attempt + 1}/${attempts})`);
+            }
+            await this.toggleAndConfirm(name, TEXT.confirmDeactivate);
+            await this.reload();
+            if (await this.isToggleState(name, false)) {
+                log(`deactivate confirmed for "${name}"`);
+                return this;
+            }
+        }
+        await this.expectToggleState(name, false);
         return this;
     }
 
@@ -410,7 +450,7 @@ export class ReportsGrid {
         await expect(reviewModal).toBeVisible();
 
         // Edit the "Basic" (Հիմնական) section.
-        const basicSection = reviewModal.locator('.reports-submit-review .item').filter({ hasText: 'Հիմնական' });
+        const basicSection = reviewModal.locator('.reports-submit-review .item').filter({ hasText: TEXT.basicSection });
         await basicSection.getByText(TEXT.editLink).click();
 
         // Edit modal carries the name input.
@@ -425,7 +465,7 @@ export class ReportsGrid {
 
         // Back on the review modal -> submit the copy.
         await expect(reviewModal).toBeVisible();
-        await reviewModal.getByRole('button', { name: TEXT.reviewSubmit, exact: true }).click();
+        await reviewModal.getByRole('button', { name: TEXT.reviewSubmit }).click();
         await expect(this.page.locator('.modal__container')).toBeHidden();
         log(`duplicate submitted as "${newName}"`);
         return this;

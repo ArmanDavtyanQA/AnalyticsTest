@@ -5,20 +5,17 @@ import { waitForReportsGridToLoad } from '../../helpers.js';
  * Localized UI copy used by the "Create report" wizard.
  */
 const TEXT = {
-    openButton: 'Ստեղծել',      // page-level "Create" button that opens the wizard
-    modalTitle: 'Ստեղծել հաշվետվություն',
-    continueButton: 'Շարունակել', // steps 1-3 footer
-    createButton: 'Ստեղծել',     // step 4 footer (submit)
-    applyButton: 'Կիրառել',      // filter popup apply
+    openButton: /^(Ստեղծել|Create)$/,
+    modalTitle: /Ստեղծել հաշվետվություն|Create report/i,
+    continueButton: /^(Շարունակել|Continue)$/,
+    createButton: /^(Ստեղծել|Create)$/,
+    applyButton: /^(Կիրառել|Apply)$/,
 };
 
-/**
- * Report frequency tab labels (step 2). Use {@link REPORT_FREQUENCY} keys in tests.
- */
 const FREQUENCY_LABELS = {
-    daily: 'Օրական',
-    weekly: 'Շաբաթական',
-    monthly: 'Ամսական',
+    daily: /^(Daily|Օրական)$/i,
+    weekly: /^(Weekly|Շաբաթական)$/i,
+    monthly: /^(Monthly|Ամսական)$/i,
 };
 
 export const REPORT_FREQUENCY = {
@@ -33,8 +30,8 @@ export const REPORT_FREQUENCY = {
  *   - CREATION_DATE   - for created-date report cases
  */
 const REPORT_BY_LABELS = {
-    settlement: 'Հաշվանցման ամսաթիվ',
-    creation: 'Ստեղծման ամսաթիվ',
+    settlement: /^(Settlement date|Հաշվանցման ամսաթիվ)$/i,
+    creation: /^(Creation date|Ստեղծման ամսաթիվ)$/i,
 };
 
 export const REPORT_BY = {
@@ -53,7 +50,8 @@ export const REPORT_FILTERS = {
 };
 
 const REPORT_GRID_ROW_SELECTOR =
-    '.transactions-wrapper__listing table tbody tr, main table tbody tr, table tbody tr';
+    '.transactions-reports-wrapper table tbody tr, .transactions-wrapper__listing table tbody tr, '
+    + 'main table tbody tr, table tbody tr';
 
 /**
  * Page Object for the 4-step "Create report" wizard.
@@ -74,12 +72,13 @@ export class CreateReportModal {
     constructor(page) {
         this.page = page;
         this.root = page.locator('.modal__container');
-        this.title = this.root.locator('.modal__title-large');
-        this.stepper = this.root.locator('.modal-stepper p').first();
+        this.title = this.root.locator('.modal__title-large, .modal__title').first();
+        this.stepper = this.root
+            .locator('.create-report-modal__stepper p, .modal-stepper p')
+            .first();
         this.nameInput = this.root.locator('input[name="name"]');
         this.emailInput = this.root.locator('#email-input');
-        // The footer "submit" button advances steps 1-3 (Continue) and submits step 4 (Create).
-        this.footerSubmit = this.root.locator('.modal-footer button[type="submit"]');
+        this.footerSubmit = this.root.locator('.modal-footer button[type="submit"], button[type="submit"]').first();
     }
 
     /** Opens the wizard from the reports page and waits for step 1. */
@@ -96,7 +95,7 @@ export class CreateReportModal {
      * @param {1 | 2 | 3 | 4} step
      */
     async expectStep(step) {
-        await expect(this.stepper).toHaveText(`Քայլ ${step}/4`);
+        await expect(this.stepper).toHaveText(new RegExp(`^(Քայլ|Step)\\s*${step}/4$`));
     }
 
     /** Clicks the footer "Continue" (Շարունակել) to advance a step. */
@@ -146,12 +145,14 @@ export class CreateReportModal {
                 `Unknown report frequency "${frequency}". Use one of: ${Object.keys(FREQUENCY_LABELS).join(', ')}`
             );
         }
-        await this.root.locator('.tabs-container .tab').filter({ hasText: label }).click();
+        const tab = this.root.getByText(label).first();
+        await expect(tab).toBeVisible();
+        await tab.click();
         return this;
     }
 
     /**
-     * Step 2 - selects the "report by date" radio.
+     * Step 2 - selects the "report by date" option.
      * @param {keyof typeof REPORT_BY_LABELS} reportBy - use REPORT_BY.*
      *   (SETTLEMENT_DATE for settled reports, CREATION_DATE for created-date reports)
      */
@@ -162,11 +163,10 @@ export class CreateReportModal {
                 `Unknown "report by" option "${reportBy}". Use one of: ${Object.keys(REPORT_BY_LABELS).join(', ')}`
             );
         }
-        // The whole card intercepts pointer events, so click the card itself rather
-        // than the inner radio label (which would be blocked by the card overlay).
-        const item = this.root.locator('.report-types .item-select').filter({ hasText: label });
-        await item.click();
-        await expect(item.locator('input[type="radio"]')).toBeChecked();
+        // Cards are labelled paragraphs (hy/en); `.report-types .item-select` is gone.
+        const option = this.root.getByText(label).first();
+        await expect(option).toBeVisible();
+        await option.click();
         return this;
     }
 

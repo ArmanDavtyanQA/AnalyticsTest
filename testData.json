@@ -23,29 +23,13 @@
     "exactDate": {
       "startDate": "06-05-2026"
     },
+    "addressFilterRange": {
+      "startDate": "01-06-2025",
+      "endDate": "30-06-2026"
+    },
     "settlementDate": {
       "startDate": "01-12-2025",
       "endDate": "31-12-2030"
-    }
-  },
-  "sideSheet": {
-    "sections": {
-      "DETAILS_CARD": 5
-    },
-    "items": {
-      "AUTHORIZATION_CODE": 0,
-      "RRN_1": 1,
-      "RRN_2": 2,
-      "RRN_3": 3,
-      "TERMINAL_ID": 2
-    },
-    "selectors": {
-      "container": ".side-sheet__container",
-      "content": ".side-sheet__content",
-      "card": ".list-card",
-      "itemContainer": ".list-card__content",
-      "item": ".list-card__item.transaction-list-item",
-      "valueSpan": "span"
     }
   }
 }

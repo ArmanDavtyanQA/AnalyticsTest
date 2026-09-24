@@ -18,7 +18,7 @@ test.describe('Reports', { tag: '@reports' }, () => {
 
     test('Test environment login and navigation', async ({ page }) => {
         await expect(page).toHaveURL(new RegExp(`${ROUTES.reports}$`));
-        await expect(page.getByRole('button', { name: 'Ստեղծել' })).toBeVisible();
+        await expect(page.getByRole('button', { name: /^(Ստեղծել|Create)$/ })).toBeVisible();
     });
 
     test('Create Daily settled report', async ({ page }) => {

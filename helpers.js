@@ -1,5 +1,37 @@
 import { expect } from '@playwright/test';
 import testData from './testData.json' assert { type: 'json' };
+import { ReactCalendar } from './pages/components/reactCalendar.component.js';
+import { handleProfileVerification, isProfileVerificationRequired } from './pages/flows/profileVerification.flow.js';
+import {
+    TransactionSideSheet,
+    isSideSheetValuePopulated,
+    isUsableFilterSeed,
+    resolveSideSheetFieldKey,
+    readSideSheetItemValue,
+} from './pages/components/transactionSideSheet.component.js';
+
+export { ReactCalendar, toCalendarInputDate } from './pages/components/reactCalendar.component.js';
+export {
+    TransactionSideSheet,
+    SIDE_SHEET_FIELDS,
+    isSideSheetValuePopulated,
+    isUsableFilterSeed,
+    resolveSideSheetFieldKey,
+    readSideSheetItemValue,
+} from './pages/components/transactionSideSheet.component.js';
+
+/** Bilingual filter labels for "Add filter" popup (hy / en). */
+export const FILTER_LABELS = {
+    SETTLEMENT_DATE: /^(Settlement date|Հաշվանցման ամսաթիվ)$/i,
+    CREATION_DATE: /^(Creation date|Ստեղծման ամսաթիվ)$/i,
+    CARD_NUMBER: /^(Card number|Քարտի համար)$/i,
+    AMOUNT: /^(Amount|Գումար)$/i,
+    UNIQUE_ID: /^(Unique ID|Ունիկալ ID)$/i,
+    TERMINAL_ID: /^(Terminal ID|Տերմինալ ID)$/i,
+    SERIAL_NUMBER: /^(Serial number|Սերիական համար)$/i,
+    MERCHANT_NAME: /^(ASC name|Merchant name|ԱՍԿ անվանում)$/i,
+    ADDRESS: /^(Address|Հասցե)$/i,
+};
 
 /**
  * Generic Helpers
@@ -72,10 +104,17 @@ export const waitForGridResponse = (page, timeout = 60000) =>
  * @returns {Promise<'data' | 'empty'>} the terminal state that was reached.
  */
 export const waitForGridToLoad = async (page, timeout = 90000, { allowEmpty = false } = {}) => {
+    await handleProfileVerification(page);
+
     let gridState = 'loading';
     await expect
         .poll(
             async () => {
+                if (await isProfileVerificationRequired(page)) {
+                    await handleProfileVerification(page);
+                    return 'loading';
+                }
+
                 // Empty state: API returned 0 rows. Checked first because in this
                 // state <tbody> is replaced by the placeholder, so there are no
                 // skeletons to wait on.
@@ -127,22 +166,74 @@ export const waitForGridToLoad = async (page, timeout = 90000, { allowEmpty = fa
     return gridState;
 };
 
-const REPORTS_TABLE_BODY = '.reports-table table tbody';
+const REPORTS_TABLE =
+    '.transactions-reports-wrapper table, .reports-table table, .transactions-wrapper__listing table, table';
+const REPORTS_TABLE_BODY =
+    '.transactions-reports-wrapper table tbody, .reports-table table tbody, '
+    + '.transactions-wrapper__listing table tbody, table tbody';
+/** Data cell text — header rows have buttons, not `td p`. Prefer :visible. */
+const REPORTS_DATA_CELL =
+    '.transactions-reports-wrapper table tbody tr td p, .reports-table table tbody tr td p, '
+    + '.transactions-wrapper__listing table tbody tr td p, table tbody tr td p';
 
 /**
  * Waits for the reports grid (active or archived) to finish loading.
  * Do not use {@link waitForGridToLoad} on reports pages — that helper targets the
  * transactions grid and can poll the wrong table / wait on GetTransactions semantics.
  *
+ * Readiness is based on a visible data cell (or empty-state copy). Remount only when
+ * no `td p` exists in the DOM at all — a narrow `.reports-table` selector used to
+ * miss an already-painted grid and poll "loading" until timeout.
+ *
  * @param {import('@playwright/test').Page} page
  * @param {number} [timeout]
  */
-export const waitForReportsGridToLoad = async (page, timeout = 60_000) => {
-    const tableBody = page.locator(REPORTS_TABLE_BODY);
+export const waitForReportsGridToLoad = async (page, timeout = 90_000) => {
+    await handleProfileVerification(page);
+
+    const tableBody = page.locator(REPORTS_TABLE_BODY).first();
+    const dataCell = page.locator(`${REPORTS_DATA_CELL} >> visible=true`).first();
+
+    const hasPaintedRows = async () => dataCell.isVisible().catch(() => false);
+    const hasDataCellInDom = async () =>
+        (await page.locator(REPORTS_DATA_CELL).count().catch(() => 0)) > 0;
+
     await expect
         .poll(
             async () => {
-                if (!(await tableBody.isVisible().catch(() => false))) {
+                if (await isProfileVerificationRequired(page)) {
+                    await handleProfileVerification(page);
+                    return 'loading';
+                }
+
+                const emptyVisible = await page
+                    .locator(REPORTS_TABLE)
+                    .first()
+                    .locator('p', { hasText: EMPTY_STATE_TEXT })
+                    .first()
+                    .isVisible()
+                    .catch(() => false);
+                if (emptyVisible) {
+                    return 'ready';
+                }
+
+                if (await hasPaintedRows()) {
+                    return 'ready';
+                }
+
+                // DOM has cells but visibility probe failed — still ready if skeletons are gone.
+                if (await hasDataCellInDom()) {
+                    const skeletons = await page
+                        .locator('.react-loading-skeleton:visible')
+                        .count()
+                        .catch(() => 0);
+                    if (skeletons === 0) {
+                        return 'ready';
+                    }
+                }
+
+                const bodyVisible = await tableBody.isVisible().catch(() => false);
+                if (!bodyVisible) {
                     return 'loading';
                 }
                 const visibleSkeletons = await tableBody
@@ -154,8 +245,9 @@ export const waitForReportsGridToLoad = async (page, timeout = 60_000) => {
             {
                 timeout,
                 message:
-                    `Reports grid still showing loading skeletons after ${timeout}ms. ` +
-                    'The reports list has not finished loading — the backend may be under heavy load.',
+                    `Reports grid not ready after ${timeout}ms. `
+                    + 'Either the table never mounted (wrong selector / SPA shell) '
+                    + 'or loading skeletons never cleared under backend load.',
             },
         )
         .not.toBe('loading');
@@ -211,134 +303,245 @@ export const fillWithRetry = async (locator, value, retries = 3) => {
 
 export const parseDate = (value) => {
     if (!value) return null;
-    const [dd, mm, yyyy] = value.split('-').map(Number);
+    const normalized = String(value).trim().replace(/\//g, '-');
+    const [dd, mm, yyyy] = normalized.split('-').map(Number);
     return new Date(yyyy, mm - 1, dd);
 };
 
 
-export const openDetailsSideSheet = async (page, rowIndex = 0) => {
-    await expect(page.locator('.filter-popup.show')).toBeHidden({ timeout: 5000 });
+export const dismissSideSheet = async (sideSheet) => {
+    const sheet = sideSheet instanceof TransactionSideSheet
+        ? sideSheet
+        : new TransactionSideSheet(sideSheet);
+    await sheet.dismiss();
+};
 
-    // Wait for either rows or the empty state, then surface a clear error if
-    // there are no rows to click. Otherwise this used to time out on
-    // `tbody.toBeVisible`, masking the real cause (filter returned 0 results).
+/**
+ * Opens a transaction row's details side sheet and waits until the async details
+ * payload has painted at least one real field.
+ */
+export const openDetailsSideSheet = async (page, rowIndex = 0, { detailsTimeout = 30_000 } = {}) => {
+    await expect(page.locator('.filter-popup.show')).toBeHidden({ timeout: 5000 }).catch(() => { });
+
     await waitForGridToLoad(page);
 
     const tableBody = page.locator('.transactions-wrapper__listing table tbody');
     const row = tableBody.locator('tr').nth(rowIndex);
     await expect(row).toBeVisible({ timeout: 15000 });
-    await row.click();
-    const sideSheet = page.locator('.side-sheet__container');
-    await expect(sideSheet).toBeVisible({ timeout: 15000 });
-    await expect(
-        sideSheet.locator('.side-sheet__content')
-    ).toBeVisible();
-    return sideSheet;
+
+    const root = page.locator('.side-sheet__container');
+    for (const cellIndex of [0, 1, 4]) {
+        if (await root.isVisible().catch(() => false)) break;
+        await row.locator('td').nth(cellIndex).click({ timeout: 5_000 }).catch(() => { });
+        const opened = await root
+            .waitFor({ state: 'visible', timeout: 5_000 })
+            .then(() => true)
+            .catch(() => false);
+        if (opened) break;
+    }
+    await expect(root).toBeVisible({ timeout: 15000 });
+    await expect(root.locator('.side-sheet__content')).toBeVisible();
+
+    const sheet = new TransactionSideSheet(root);
+    await expect
+        .poll(
+            async () => isSideSheetValuePopulated(
+                await readSideSheetItemValue(sheet.fieldItem('CREATION_DATE')).catch(() => ''),
+            ),
+            {
+                timeout: detailsTimeout,
+                message:
+                    'Transaction details side sheet opened but values never populated '
+                    + '(still empty / "null null"). The details fetch likely stalled.',
+            },
+        )
+        .toBe(true);
+
+    return root;
 };
 
-export const applyDateFilter = async (page, filterId, configKey = 'standardRange') => {
-    const dateConfig = testData.creationDateFilters[configKey];
-    if (!dateConfig) {
-        throw new Error(`Date configuration '${configKey}' not found in testData.json`);
-    }
-    const filterChip = page.locator(`.filter-chip[data-filter-id="${filterId}"]`);
-    await expect(filterChip).toBeVisible({ timeout: 15_000 });
-    await filterChip.click();
-    const filterPopup = page.locator('.filter-popup.show');
-    await expect(filterPopup).toBeVisible();
-    const transactionStartDateInput = page.locator('input[name="transactionStartDate"]');
-    const transactionEndDateInput = page.locator('input[name="trasnactionEndDate"]');
-    await expect(transactionStartDateInput).toBeVisible();
-    await transactionStartDateInput.fill(dateConfig.startDate);
-    if (dateConfig.endDate) {
-        const endDateVisible = await transactionEndDateInput.isVisible().catch(() => false);
-        if (endDateVisible) {
-            await transactionEndDateInput.fill(dateConfig.endDate);
-        }
-    }
-    // Start listening for the grid reload BEFORE the submit so we don't miss it
-    // and don't read stale rows that are still on screen pre-reload.
-    const gridResponse = waitForGridResponse(page);
-    await transactionStartDateInput.press('Enter');
-    const submitButton = filterPopup.locator('button[type="submit"], .filter-popup__footer button').first();
-    if (await filterPopup.isVisible()) {
-        await expect(submitButton).toBeEnabled({ timeout: 5000 });
-        await submitButton.click();
-    }
-    await expect(filterPopup).toBeHidden({ timeout: 10_000 });
-    await gridResponse;
-    await waitForGridToLoad(page);
-}
-
-export const creationDateFilterRange = async (page, configKey = 'standardRange') => {
-    return applyDateFilter(page, 'creationDate', configKey);
-}
-
-export const settlementDateFilterRange = async (page, configKey = 'settlementDate') => {
-    return applyDateFilter(page, 'settlementDate', configKey);
-}
-
-
-
 /**
- * Retrieves a value from the Side Sheet using semantic section and item indices.
- * 
- * @param {Locator} sideSheet - The side sheet container locator
- * @param {number} sectionIndex - The list-card index (typically 5 for details)
- * @param {number} itemIndex - The transaction-list-item index within the section
- * @returns {Promise<string>} The trimmed text value from the span element
- * @throws {Error} If the DOM structure is not found or values are missing
+ * Reads a side-sheet field by semantic key (e.g. `SETTLEMENT_DATE`) or legacy indices.
  */
-export const getSideSheetValue = async (sideSheet, sectionIndex, itemIndex) => {
-    const config = testData.sideSheet;
-    const sectionIdx = typeof sectionIndex === 'string' ? config.sections[sectionIndex] : sectionIndex;
-    const itemIdx = typeof itemIndex === 'string' ? config.items[itemIndex] : itemIndex;
-    const cardPath = `${config.selectors.card}:nth-child(${sectionIdx})`;
-    const itemPath = `${config.selectors.item}`;
-    const valuePath = `${config.selectors.valueSpan}`;
+export const getSideSheetValue = async (
+    sideSheet,
+    sectionOrField,
+    itemKey,
+    { timeout = 15000 } = {},
+) => {
+    const fieldKey = resolveSideSheetFieldKey(sectionOrField, itemKey);
+    const sheet = sideSheet instanceof TransactionSideSheet
+        ? sideSheet
+        : new TransactionSideSheet(sideSheet);
 
     try {
-        const value = await sideSheet
-            .locator(config.selectors.content)
-            .locator(cardPath)
-            .locator(config.selectors.itemContainer)
-            .locator(itemPath)
-            .nth(itemIdx)
-            .locator(valuePath)
-            .textContent({ timeout: 15000 });
-
-        if (!value) {
-            throw new Error(
-                `Side Sheet value is empty. ` +
-                `Section: ${sectionIndex}, Item: ${itemIndex}. ` +
-                `Selector path: ${cardPath} > ${itemPath}[${itemIndex}] > ${valuePath}`
-            );
-        }
-
-        return value.trim();
+        return await sheet.getFieldValue(fieldKey, { timeout });
     } catch (error) {
         try {
-            const items = sideSheet
-                .locator(config.selectors.content)
-                .locator(cardPath)
-                .locator(config.selectors.itemContainer)
-                .locator(config.selectors.item);
+            const items = sheet.content.locator(
+                '.transactions-list-card__item, .list-card__item',
+            );
             const count = await items.count();
-            console.log(`Debug: Found ${count} items in section ${sectionIdx}:`);
+            console.log(`Debug: Found ${count} side-sheet items:`);
             for (let i = 0; i < count; i++) {
                 const text = await items.nth(i).innerText();
                 console.log(` - Item ${i}: "${text.replace(/\n/g, ' ')}"`);
             }
         } catch (e) {
-            console.log('Debug: Failed to log items:', e.message);
+            console.log('Debug: Failed to log side-sheet items:', e.message);
         }
 
         throw new Error(
-            `Failed to retrieve Side Sheet value at section ${sectionIndex} (idx: ${sectionIdx}), item ${itemIndex} (idx: ${itemIdx}). ` +
-            `Original error: ${error.message}`
+            `Failed to retrieve side-sheet field "${fieldKey}" `
+            + `(from section=${sectionOrField}, item=${itemKey ?? 'n/a'}). `
+            + `Original error: ${error.message}`,
         );
     }
-}
+};
+
+export const applyDateFilter = async (page, filterId, configKey = 'standardRange', { timeout = 90_000 } = {}) => {
+    const dateConfig = testData.creationDateFilters[configKey];
+    if (!dateConfig) {
+        throw new Error(`Date configuration '${configKey}' not found in testData.json`);
+    }
+
+    const calendar = await ReactCalendar.openFromChip(page, filterId);
+    await calendar.setRange(dateConfig.startDate, dateConfig.endDate);
+
+    const gridResponse = waitForGridResponse(page, timeout);
+    await calendar.apply();
+    await gridResponse;
+    await waitForGridToLoad(page, timeout);
+};
+
+export const creationDateFilterRange = async (page, configKey = 'standardRange', options) => {
+    return applyDateFilter(page, 'creationDate', configKey, options);
+};
+
+export const applyCreationDateExact = async (page, dateOnly, { timeout = 90_000 } = {}) => {
+    const calendar = await ReactCalendar.openFromChip(page, 'creationDate');
+    await calendar.setExact(dateOnly);
+
+    const gridResponse = waitForGridResponse(page, timeout);
+    await calendar.apply();
+    await gridResponse;
+    await waitForGridToLoad(page, timeout);
+};
+
+export const fillVisibleCalendarRange = async (
+    page,
+    startDate,
+    endDate,
+    { forceRange = false, chipText } = {},
+) => {
+    const calendar = await ReactCalendar.waitForOpen(page, { chipText });
+    if (forceRange || (endDate && startDate !== endDate)) {
+        await calendar.setRange(startDate, endDate ?? startDate);
+    } else {
+        await calendar.setExact(startDate);
+    }
+    return { calendar };
+};
+
+export const settlementDateFilterRange = async (page, configKey = 'settlementDate') => {
+    return applyDateFilter(page, 'settlementDate', configKey);
+};
+
+export const getSideSheetFilterSeed = async (
+    page,
+    sectionOrField,
+    itemIndex,
+    { maxRows = 12, perRowTimeout = 8_000 } = {},
+) => {
+    const fieldKey = resolveSideSheetFieldKey(sectionOrField, itemIndex);
+    const seeds = await getSideSheetFilterSeeds(
+        page,
+        [{ key: 'value', field: fieldKey }],
+        { maxRows, perRowTimeout },
+    );
+    return seeds.value;
+};
+
+export const getSideSheetFilterSeeds = async (
+    page,
+    fields,
+    { maxRows = 12, perRowTimeout = 8_000 } = {},
+) => {
+    const fieldDesc = fields
+        .map((f) => (f.field ? `${f.key}(${f.field})` : `${f.key}(${f.section}/${f.item})`))
+        .join(', ');
+
+    for (let row = 0; row < maxRows; row++) {
+        const openSheet = page.locator('.side-sheet__container');
+        if (await openSheet.isVisible().catch(() => false)) {
+            await dismissSideSheet(openSheet).catch(() => { });
+        }
+
+        let sideSheet;
+        try {
+            sideSheet = await openDetailsSideSheet(page, row, { detailsTimeout: 20_000 });
+        } catch {
+            console.log(
+                `[FilterSeed] NOT FOUND: could not open details for grid row ${row} `
+                + `(looking for ${fieldDesc}).`,
+            );
+            continue;
+        }
+
+        const sheet = new TransactionSideSheet(sideSheet);
+        try {
+            const result = {};
+            let allUsable = true;
+            let unusableKey = null;
+            let unusableValue = null;
+            for (const field of fields) {
+                const fieldKey = field.field
+                    ? field.field
+                    : resolveSideSheetFieldKey(field.section, field.item);
+                const value = await sheet.getFieldValue(fieldKey, { timeout: perRowTimeout });
+                if (!isUsableFilterSeed(value)) {
+                    allUsable = false;
+                    unusableKey = field.key;
+                    unusableValue = value;
+                    break;
+                }
+                result[field.key] = value;
+            }
+            if (allUsable) {
+                await dismissSideSheet(sheet);
+                return result;
+            }
+            console.log(
+                `[FilterSeed] NOT FOUND: row ${row} ${unusableKey} is unusable `
+                + `(value="${unusableValue ?? ''}") — trying next row.`,
+            );
+        } catch {
+            console.log(
+                `[FilterSeed] NOT FOUND: row ${row} missing populated ${fieldDesc} — trying next row.`,
+            );
+        }
+
+        await dismissSideSheet(sheet).catch(() => { });
+    }
+
+    throw new Error(
+        `No usable side-sheet filter seeds [${fieldDesc}] in the first ${maxRows} grid rows `
+        + '(values were empty, "null null", or N/A).',
+    );
+};
+
+export const getMerchantNameFromGrid = async (page, rowIndex = 0) => {
+    const cell = page
+        .locator('.transactions-wrapper__listing table tbody tr')
+        .nth(rowIndex)
+        .locator('td')
+        .nth(1)
+        .locator('p');
+    await expect(cell).toBeVisible({ timeout: 15_000 });
+    const name = ((await cell.textContent()) || '').trim();
+    expect(name, 'grid merchant name cell was empty').toBeTruthy();
+    return name;
+};
 
 export const resetFilters = async (page) => {
     const resetButton = page.locator('.filter-chip[data-filter-id="reset"]');
@@ -369,23 +572,19 @@ export const resetFilters = async (page) => {
 
 /**
  * Robustly retrieves a filter option from the .add-filter popup.
- * 
- * Waits for the popup to be visible, queries only within it, and matches label text
- * with trimming to avoid flakiness from hidden/detached DOM nodes in parallel execution.
- * 
- * @param {Page} page - The Playwright page object
- * @param {string} labelText - The label text to match (will be trimmed)
- * @returns {Locator} The filter item locator scoped to the visible .add-filter container
+ * @param {string|RegExp} labelText
  */
 export const getFilterByLabel = async (page, labelText) => {
     const addFilterPopup = page.locator('.add-filter');
     await expect(addFilterPopup).toBeVisible({ timeout: 5000 });
-    const trimmedLabel = labelText.trim();
-    return addFilterPopup.locator('.add-filter-list .add-filter-list__item', { hasText: new RegExp(`^${trimmedLabel}$`, 'i') });
+    const pattern = labelText instanceof RegExp
+        ? labelText
+        : new RegExp(`^${String(labelText).trim()}$`, 'i');
+    return addFilterPopup.locator('.add-filter-list .add-filter-list__item', { hasText: pattern });
 };
 
 /**
- * Opens "Add Filter" popup and selects one by label.
+ * Opens "Add Filter" popup and selects one by label (string or {@link FILTER_LABELS} regex).
  */
 export const selectFilterByLabel = async (page, labelText) => {
     const addFilterChip = page.locator('.filter-chip:not([data-filter-id])');
