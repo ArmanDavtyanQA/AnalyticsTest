@@ -7,7 +7,7 @@ const ITEM =
 
 /**
  * Transaction-detail fields used by tests: the bilingual label in the first `<p>` of the
- * row item. The sheet shows no serial number or address; use the grid for those.
+ * row item. Serial number and address sit in Merchant & POS details, behind "Show more".
  */
 export const SIDE_SHEET_FIELDS = {
     CREATION_DATE: /^(Creation Date|Ստեղծման ամսաթիվ)$/i,
@@ -19,7 +19,11 @@ export const SIDE_SHEET_FIELDS = {
     RRN_2: /^RRN 2$/i,
     RRN_3: /^RRN 3$/i,
     TERMINAL_ID: /^(Terminal ID|Տերմինալ ID|Տերմինալի ID)$/i,
+    SERIAL_NUMBER: /^(Serial number|Սերիական համար)$/i,
 };
+
+/** Expands Merchant & POS details, where serial number and address are hidden. */
+const SHOW_MORE = /^(Show more|Ցույց տալ ավելին)$/i;
 
 /** True when side-sheet text is a real value (not empty / literal "null null" / N/A). */
 export const isSideSheetValuePopulated = (text) => {
@@ -92,6 +96,14 @@ export class TransactionSideSheet {
         return this;
     }
 
+    /** "Show more" reveals the rest of Merchant & POS details (serial number, address). */
+    async revealCollapsedFields() {
+        const showMore = this.content.getByRole('button', { name: SHOW_MORE }).first();
+        if (await showMore.isVisible()) {
+            await showMore.click();
+        }
+    }
+
     /** The sheet renders "null null" placeholders until the details request returns. */
     async waitForDetails({ timeout = 30_000 } = {}) {
         const creationDate = this.fieldItem('CREATION_DATE');
@@ -108,6 +120,9 @@ export class TransactionSideSheet {
      * @param {keyof typeof SIDE_SHEET_FIELDS} fieldKey
      */
     async getFieldValue(fieldKey, { timeout = 15_000 } = {}) {
+        if ((await this.fieldItem(fieldKey).count()) === 0) {
+            await this.revealCollapsedFields();
+        }
         const item = this.fieldItem(fieldKey);
         await expect
             .poll(async () => isSideSheetValuePopulated(await readSideSheetItemValue(item)), {
@@ -136,6 +151,12 @@ export class TransactionSideSheet {
         let checked = 0;
         for (let row = 0; row < rowCount && Date.now() < deadline; row++, checked++) {
             await this.open(row);
+            for (const fieldKey of fieldKeys) {
+                if ((await this.fieldItem(fieldKey).count()) === 0) {
+                    await this.revealCollapsedFields();
+                    break;
+                }
+            }
             const values = {};
             for (const fieldKey of fieldKeys) {
                 values[fieldKey] = await readSideSheetItemValue(this.fieldItem(fieldKey));

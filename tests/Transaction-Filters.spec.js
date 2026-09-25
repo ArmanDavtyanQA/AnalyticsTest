@@ -157,17 +157,18 @@ test.describe('Filters', () => {
         await transactionsGrid.expectEveryRow(GRID_COLUMNS.TERMINAL_ID, value);
     });
 
-    test('Serial number filter', async ({ transactionFilters }) => {
-        test.info().annotations.push({
-            type: 'coverage',
-            description: 'Transactions never show a serial number (not in the grid or the details '
-                + 'sheet), so this checks the selected serial reaches the query and the grid renders '
-                + 'the response — not the rows themselves.',
-        });
+    test('Serial number filter', async ({ transactionFilters, sideSheet }) => {
+        const { values } = await sideSheet.findRowWith(['SERIAL_NUMBER']);
 
-        const result = await transactionFilters.filterByFirstChecklistEntry('SERIAL_NUMBER', { allowEmpty: true });
+        const result = await transactionFilters.filterByChecklist('SERIAL_NUMBER', values.SERIAL_NUMBER);
 
-        expect(result.variables.serialNumbers).toEqual([result.value]);
+        expect(result.totalCount, `no transactions for serial ${values.SERIAL_NUMBER}`).toBeGreaterThan(0);
+        for (const row of firstAndLastRow(result)) {
+            await sideSheet.open(row);
+            expect(await sideSheet.getFieldValue('SERIAL_NUMBER'), `serial number of row ${row}`)
+                .toBe(values.SERIAL_NUMBER);
+            await sideSheet.dismiss();
+        }
     });
 
     test('Merchant name filter', async ({ transactionsGrid, transactionFilters }) => {

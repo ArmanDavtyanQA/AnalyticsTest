@@ -94,7 +94,7 @@ Grid — `TransactionsGrid`:
 
 Transaction details side sheet — `TransactionSideSheet`:
 - `.side-sheet__container .side-sheet__content`, rows `.transactions-list-card__item` (older builds `.list-card__item`). Row = label `<p>` + value `<p>` (copy button + text). Values read "null null" until the details load. Close = `[data-id="dismiss-svg-icon"]`.
-- Field keys (`SIDE_SHEET_FIELDS`): `CREATION_DATE`, `SETTLEMENT_DATE` (`"15-09-2026 16:00"`), `AMOUNT`, `CARD_NUMBER`, `AUTHORIZATION_CODE`, `RRN_1`, `RRN_2`, `RRN_3`, `TERMINAL_ID` ("Տերմինալ ID"). The sheet has no serial number or address. Rows are matched by the label `<p>` only, because the row text also contains the value.
+- Field keys (`SIDE_SHEET_FIELDS`): `CREATION_DATE`, `SETTLEMENT_DATE` (`"15-09-2026 16:00"`), `AMOUNT`, `CARD_NUMBER`, `AUTHORIZATION_CODE`, `RRN_1`, `RRN_2`, `RRN_3`, `TERMINAL_ID` ("Տերմինալ ID"), `SERIAL_NUMBER`. Serial number and address are in "Merchant & POS details" / "ԱՍԿ և POS տվյալներ", behind "Show more" / "Ցույց տալ ավելին" (`revealCollapsedFields()`). Rows are matched by the label `<p>` only, because the row text also contains the value.
 - API: `open(row)` (waits until details load), `getFieldValue(key)`, `dismiss()`, `findRowWith([keys])` (opens rows until one has every field populated; bounded by a time budget).
 
 ### 5.4 Reports (scheduled e-mail reports)
@@ -123,7 +123,7 @@ Transaction details side sheet — `TransactionSideSheet`:
   - Settlement date exact / range → seed from a row's side sheet; check the first and last filtered rows' side sheets.
   - Card number, exact amount, amount range, Terminal ID, Merchant name, Address → seed from the grid; every visible row must match.
   - Authorization code → seed from the default view's API items; every returned item and the first/last rows' side sheets must match. RRN 1/2/3 → seed from a side sheet; check the first/last rows' side sheets.
-  - Serial number → first checklist entry; asserts the query carries exactly that serial (coverage limit, see §9).
+  - Serial number → seed from a row's side sheet (Merchant & POS details, after Show more); search that serial in the checklist and check the first and last filtered rows' side sheets.
   - Reset → card filter, then reset restores the default query.
 - `Reports.spec.js` (7): navigation; create Daily / Weekly / Monthly × Settlement / Creation date reports with a Terminal ID filter; assert the row appears. `afterAll` removes every report the file created.
 - `Reports-actions.spec.js` (7, `mode: 'serial'`, names fixed per worker): activate → deactivate → history → duplicate & rename → archive both → unarchive both → archive and delete both. A failure skips the rest and a retry reruns the chain with new names; `afterAll` removes both reports whatever happened.
@@ -150,7 +150,6 @@ Transaction details side sheet — `TransactionSideSheet`:
 ## 9. Current state and known gaps (24 Sep 2026)
 
 - Product bug: an exact creation date (Apply range off) updates the chip but sends no `GetTransactions` query, so the grid keeps the previous rows. `Creation date filter with exact date` is marked `test.fail()`; remove the mark when the bug is fixed (Playwright then reports it as passing unexpectedly).
-- Coverage limit: no transaction shows a serial number (not in the grid, not in the side sheet), so the serial filter test checks the query and rendering only. The first entries of the serial list have no transactions in the last 14 days; all 620 together match ~54k.
 - Product bug: when `GET /proxy/api/Merchant/GetPersonEmails` fails (seen as a CORS error from a gateway error page), opening the Create report modal crashes the whole app to "Something went wrong — Reload Page" (`TypeError: T.map is not a function`). Tests fail on it and pass on retry; do not mask it.
 - UX bug: the Unique ID type select shows an empty label although Authorization Code is selected; choosing "Authorization Code" then deselects it, and Apply silently does nothing (no query, popup stays open). The suite works around it in `selectUniqueIdType()`.
 - Single-language strings: Unique ID type options are English-only in both UI languages.
